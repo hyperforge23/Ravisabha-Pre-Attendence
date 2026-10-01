@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { Header } from "@/components/Header";
 import { MobileSearch } from "@/components/MobileSearch";
 import { UserCard } from "@/components/UserCard";
@@ -10,7 +10,7 @@ import { userService } from "@/services/userService";
 export default function AttendancePage() {
   const [selectedMobile, setSelectedMobile] = useState<string>("");
   const [users, setUsers] = useState<User[]>([]);
-  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{
     type: "success" | "info" | "error";
@@ -50,7 +50,7 @@ export default function AttendancePage() {
   };
 
   // Toggle individual user checkbox
-  const handleToggleUser = (userId: number) => {
+  const handleToggleUser = (userId: string) => {
     setSelectedUserIds((prev) =>
       prev.includes(userId)
         ? prev.filter((id) => id !== userId)

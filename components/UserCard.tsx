@@ -6,8 +6,8 @@ import { User } from "@/types/user";
 interface UserCardProps {
   mobileNumber: string;
   users: User[];
-  selectedUserIds: number[];
-  onToggleUser: (userId: number) => void;
+  selectedUserIds: string[];
+  onToggleUser: (userId: string) => void;
   onToggleSelectAll: () => void;
   onMarkPresent: () => void;
   isSubmitting?: boolean;

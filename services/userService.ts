@@ -2,48 +2,86 @@ import { User, UserService } from "@/types/user";
 import { mockUsers } from "@/mock/users.mock";
 
 /**
- * Mock implementation of UserService.
- * In the future, this can easily be replaced by an API implementation (e.g. ApiUserService)
- * or configured via environment variables / dependency injection without changing UI components.
- */
-class MockUserService implements UserService {
-  /**
-   * Search for distinct mobile numbers matching the query (type-ahead)
-   */
-  async searchMobileNumbers(query: string): Promise<string[]> {
-    // Simulate brief network latency
-    await new Promise((resolve) => setTimeout(resolve, 80));
-
+  * API implementation of UserService connecting to /api/search route.
+  */
+class ApiUserService implements UserService {
+  async searchUsers(query: string): Promise<User[]> {
     const cleanQuery = query.trim();
     if (!cleanQuery) return [];
 
-    // Extract unique mobile numbers that start with or contain the query string
-    const matchingNumbers = Array.from(
-      new Set(
-        mockUsers
-          .filter((user) => user.mobileNumber.startsWith(cleanQuery))
-          .map((user) => user.mobileNumber)
-      )
-    );
-
-    return matchingNumbers;
+    const res = await fetch(`/api/search?query=${encodeURIComponent(cleanQuery)}`);
+    if (!res.ok) {
+      throw new Error(`Failed to search users: ${res.statusText}`);
+    }
+    const data = await res.json();
+    return data.users || [];
   }
 
-  /**
-   * Fetch all users associated with a specific mobile number
-   */
   async getUsersByMobileNumber(mobileNumber: string): Promise<User[]> {
-    // Simulate brief network latency
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
     const cleanNumber = mobileNumber.trim();
-    return mockUsers.filter((user) => user.mobileNumber === cleanNumber);
+    if (!cleanNumber) return [];
+
+    const res = await fetch(`/api/search?mobile=${encodeURIComponent(cleanNumber)}`);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch users by mobile: ${res.statusText}`);
+    }
+    const data = await res.json();
+    return data.users || [];
   }
 
-  /**
-   * Mock submission for marking users as present
-   */
-  async markUsersPresent(userIds: number[]): Promise<{ success: boolean; count: number }> {
+  async markUsersPresent(userIds: string[]): Promise<{ success: boolean; count: number }> {
+    // TODO: attendance API
+    return {
+      success: true,
+      count: userIds.length,
+    };
+  }
+}
+
+/**
+ * Mock implementation of UserService for testing/offline use.
+ */
+class MockUserService implements UserService {
+  async searchUsers(query: string): Promise<User[]> {
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const cleanQuery = query.trim().toLowerCase();
+    if (!cleanQuery) return [];
+
+    const words = cleanQuery.split(/\s+/).filter(Boolean);
+
+    return mockUsers
+      .filter((user) => {
+        return words.every((word) => {
+          const fields = [
+            user.name,
+            user.mobileNumber,
+            user.mobileNo,
+            user.smkNo,
+            user.firstName,
+            user.middleName,
+            user.lastName,
+            user.firstNameGuj,
+            user.middleNameGuj,
+            user.lastNameGuj,
+          ]
+            .filter(Boolean)
+            .map((f) => (f as string).toLowerCase());
+
+          return fields.some((field) => field.includes(word));
+        });
+      })
+      .slice(0, 10);
+  }
+
+  async getUsersByMobileNumber(mobileNumber: string): Promise<User[]> {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const cleanNumber = mobileNumber.trim();
+    return mockUsers.filter(
+      (user) => user.mobileNumber === cleanNumber || user.mobileNo === cleanNumber
+    );
+  }
+
+  async markUsersPresent(userIds: string[]): Promise<{ success: boolean; count: number }> {
     await new Promise((resolve) => setTimeout(resolve, 150));
     return {
       success: true,
@@ -52,4 +90,6 @@ class MockUserService implements UserService {
   }
 }
 
-export const userService = new MockUserService();
+export { MockUserService, ApiUserService };
+export const userService: UserService = new MockUserService();
+
