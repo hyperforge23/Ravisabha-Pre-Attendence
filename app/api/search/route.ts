@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PipelineStage } from "mongoose";
 import { connectDb } from "@/lib/mongodb";
 import SmkDetail from "@/models/SmkDetail";
 
 export const dynamic = "force-dynamic";
-
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 interface SmkDoc {
   _id?: { toString(): string } | string;
@@ -20,13 +15,30 @@ interface SmkDoc {
   MiddleNameGuj?: string;
   LastNameGuj?: string;
   Gender?: number;
+  KutumbId?: number;
+  ZoneName?: string;
+  ZoneNameGuj?: string;
+  SubZoneName?: string;
+  SubZoneNameGuj?: string;
+  PresentVillageEng?: string;
+  PresentVillageGuj?: string;
+  AddressDescription?: string;
+  FamilyLeaderNameEng?: string;
+  FamilyLeaderNameGuj?: string;
 }
 
+/** Map a Mongoose document to the frontend User shape */
 function formatUser(doc: SmkDoc) {
   const firstName = doc.FirstName || "";
   const middleName = doc.MiddleName || "";
   const lastName = doc.LastName || "";
   const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ");
+  const firstNameGuj = doc.FirstNameGuj || "";
+  const middleNameGuj = doc.MiddleNameGuj || "";
+  const lastNameGuj = doc.LastNameGuj || "";
+  const gujaratiFullName = [firstNameGuj, middleNameGuj, lastNameGuj]
+    .filter(Boolean)
+    .join(" ");
   const mobileStr =
     doc.MobileNo !== undefined && doc.MobileNo !== null
       ? String(doc.MobileNo)
@@ -38,64 +50,151 @@ function formatUser(doc: SmkDoc) {
     mobileNumber: mobileStr,
     mobileNo: mobileStr,
     smkNo: doc.SmkId || "",
-    firstName: firstName,
-    middleName: middleName,
-    lastName: lastName,
-    firstNameGuj: doc.FirstNameGuj || "",
-    middleNameGuj: doc.MiddleNameGuj || "",
-    lastNameGuj: doc.LastNameGuj || "",
+    firstName,
+    middleName,
+    lastName,
+    firstNameGuj,
+    middleNameGuj,
+    lastNameGuj,
+    gujaratiName: gujaratiFullName,
     gender: doc.Gender !== undefined && doc.Gender !== null ? String(doc.Gender) : "",
+    zone: doc.ZoneName || "",
+    subZone: doc.SubZoneName || "",
+    village: doc.PresentVillageEng || "",
+    kutumbId: doc.KutumbId ?? null,
+    addressDescription: doc.AddressDescription || "",
+    familyLeaderNameEng: doc.FamilyLeaderNameEng || "",
+    familyLeaderNameGuj: doc.FamilyLeaderNameGuj || "",
   };
 }
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
-    const mobileParam = searchParams.get("mobile");
-    const queryParam = searchParams.get("query");
 
-    // Mode 2: Search by mobile number (exact 10 digits match)
+    // ── Mode A1: Direct KutumbId query ──
+    const kutumbParam = searchParams.get("kutumbId");
+    if (kutumbParam !== null && kutumbParam.trim()) {
+      const kId = Number(kutumbParam.trim());
+      if (!isNaN(kId) && kId > 0) {
+        await connectDb();
+        const docs = await SmkDetail.find(
+          { KutumbId: kId },
+          {
+            FirstName: 1,
+            MiddleName: 1,
+            LastName: 1,
+            FirstNameGuj: 1,
+            MiddleNameGuj: 1,
+            LastNameGuj: 1,
+            MobileNo: 1,
+            SmkId: 1,
+            Gender: 1,
+            KutumbId: 1,
+            ZoneName: 1,
+            ZoneNameGuj: 1,
+            SubZoneName: 1,
+            SubZoneNameGuj: 1,
+            PresentVillageEng: 1,
+            PresentVillageGuj: 1,
+            AddressDescription: 1,
+            FamilyLeaderNameEng: 1,
+            FamilyLeaderNameGuj: 1,
+          }
+        )
+          .sort({ FirstName: 1 })
+          .lean<SmkDoc[]>();
+
+        return NextResponse.json({ users: docs.map(formatUser) });
+      }
+    }
+
+    // ── Mode A2: Mobile number selection → fetch ALL members with that MobileNo / KutumbId ──
+    // ?mobile=9876543210
+    const mobileParam = searchParams.get("mobile");
     if (mobileParam !== null) {
-      const trimmedMobile = mobileParam.trim();
-      if (!/^\d{10}$/.test(trimmedMobile)) {
-        return NextResponse.json({ users: [] });
+      const trimmed = mobileParam.trim();
+
+      if (!/^\d{10}$/.test(trimmed)) {
+        return NextResponse.json(
+          { error: "Invalid mobile number. Must be exactly 10 digits." },
+          { status: 400 }
+        );
       }
 
       await connectDb();
-      const users = await SmkDetail.find({ MobileNo: Number(trimmedMobile) }).lean();
-      const formattedUsers = users.map(formatUser);
-      return NextResponse.json({ users: formattedUsers });
+      const projection = {
+        FirstName: 1,
+        MiddleName: 1,
+        LastName: 1,
+        FirstNameGuj: 1,
+        MiddleNameGuj: 1,
+        LastNameGuj: 1,
+        MobileNo: 1,
+        SmkId: 1,
+        Gender: 1,
+        KutumbId: 1,
+        ZoneName: 1,
+        ZoneNameGuj: 1,
+        SubZoneName: 1,
+        SubZoneNameGuj: 1,
+        PresentVillageEng: 1,
+        PresentVillageGuj: 1,
+        AddressDescription: 1,
+        FamilyLeaderNameEng: 1,
+        FamilyLeaderNameGuj: 1,
+      };
+
+      const matchedByMobile = await SmkDetail.find(
+        { MobileNo: Number(trimmed) },
+        projection
+      ).lean<SmkDoc[]>();
+
+      const targetKutumbId = matchedByMobile.find(
+        (d) => d.KutumbId !== undefined && d.KutumbId !== null && d.KutumbId > 0
+      )?.KutumbId;
+
+      let docs: SmkDoc[] = [];
+      if (targetKutumbId) {
+        docs = await SmkDetail.find(
+          { KutumbId: targetKutumbId },
+          projection
+        )
+          .sort({ FirstName: 1 })
+          .lean<SmkDoc[]>();
+      } else {
+        docs = matchedByMobile;
+      }
+
+      return NextResponse.json({ users: docs.map(formatUser) });
     }
 
-    // Mode 1: Search by text query
+    // ── Mode B: Type-ahead prefix search — used while user is typing ──
+    // ?query=987  → return up to 10 distinct mobile numbers that start with "987"
+    const queryParam = searchParams.get("query");
     if (!queryParam || !queryParam.trim()) {
       return NextResponse.json({ users: [] });
     }
 
-    const words = queryParam.trim().split(/\s+/).filter(Boolean);
-    if (words.length === 0) {
+    const prefix = queryParam.trim();
+
+    // Only accept numeric input for mobile search
+    if (!/^\d+$/.test(prefix)) {
+      return NextResponse.json(
+        { error: "Query must contain digits only for mobile number search." },
+        { status: 400 }
+      );
+    }
+
+    // Max 10 digits
+    if (prefix.length > 10) {
       return NextResponse.json({ users: [] });
     }
 
     await connectDb();
 
-    const wordConditions = words.map((word) => {
-      const safeWord = escapeRegex(word);
-      return {
-        $or: [
-          { FirstName: { $regex: safeWord, $options: "i" } },
-          { MiddleName: { $regex: safeWord, $options: "i" } },
-          { LastName: { $regex: safeWord, $options: "i" } },
-          { SmkId: { $regex: safeWord, $options: "i" } },
-          { mobileStr: { $regex: safeWord, $options: "i" } },
-          { FirstNameGuj: { $regex: safeWord, $options: "i" } },
-          { MiddleNameGuj: { $regex: safeWord, $options: "i" } },
-          { LastNameGuj: { $regex: safeWord, $options: "i" } },
-        ],
-      };
-    });
-
-    const pipeline: PipelineStage[] = [
+    // Match any mobile number containing the searched digits (substring match)
+    const docs = await SmkDetail.aggregate<SmkDoc>([
       {
         $addFields: {
           mobileStr: { $toString: "$MobileNo" },
@@ -103,25 +202,42 @@ export async function GET(request: NextRequest) {
       },
       {
         $match: {
-          $and: wordConditions,
+          mobileStr: { $regex: prefix },
         },
       },
       {
-        $sort: { FirstName: 1, LastName: 1 },
+        $sort: { MobileNo: 1, FirstName: 1 },
       },
       {
-        $limit: 10,
+        $limit: 20,
       },
-    ];
+      {
+        $project: {
+          FirstName: 1,
+          MiddleName: 1,
+          LastName: 1,
+          FirstNameGuj: 1,
+          MiddleNameGuj: 1,
+          LastNameGuj: 1,
+          MobileNo: 1,
+          SmkId: 1,
+          Gender: 1,
+          KutumbId: 1,
+          ZoneName: 1,
+          SubZoneName: 1,
+          PresentVillageEng: 1,
+          AddressDescription: 1,
+          FamilyLeaderNameEng: 1,
+          FamilyLeaderNameGuj: 1,
+        },
+      },
+    ]);
 
-    const users = await SmkDetail.aggregate(pipeline);
-    const formattedUsers = users.map(formatUser);
-
-    return NextResponse.json({ users: formattedUsers });
+    return NextResponse.json({ users: docs.map(formatUser) });
   } catch (error) {
-    console.error("Search API error:", error);
+    console.error("[/api/search] Error:", error);
     return NextResponse.json(
-      { message: "Internal server error" },
+      { error: "Internal server error. Please try again." },
       { status: 500 }
     );
   }

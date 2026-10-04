@@ -13,10 +13,16 @@ export interface User {
   gender?: string;
   gujaratiName?: string;
   village?: string;
+  kutumbId?: number | null;
+  zone?: string;
+  subZone?: string;
+  addressDescription?: string;
+  familyLeaderNameEng?: string;
+  familyLeaderNameGuj?: string;
 }
 
 export interface UserService {
   searchUsers(query: string): Promise<User[]>;
-  getUsersByMobileNumber(mobileNumber: string): Promise<User[]>;
+  getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null): Promise<User[]>;
   markUsersPresent(userIds: string[]): Promise<{ success: boolean; count: number }>;
 }

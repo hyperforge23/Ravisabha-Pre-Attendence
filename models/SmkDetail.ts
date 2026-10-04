@@ -21,6 +21,9 @@ export interface ISmkDetail extends Document {
   SubZoneName: string;
   SubZoneNameGuj: string;
   KutumbId: number;
+  AddressDescription:string;
+  FamilyLeaderNameEng:string;
+  FamilyLeaderNameGuj:string;
 }
 
 const SmkDetailSchema: Schema<ISmkDetail> = new Schema(
@@ -44,7 +47,10 @@ const SmkDetailSchema: Schema<ISmkDetail> = new Schema(
     ZoneNameGuj: { type: String },
     SubZoneName: { type: String },
     SubZoneNameGuj: { type: String },
-    KutumbId: { type: Number }
+    KutumbId: { type: Number },
+    AddressDescription: { type: String },
+    FamilyLeaderNameEng: { type: String },
+    FamilyLeaderNameGuj: { type: String },
   },
   {
     timestamps: true,
