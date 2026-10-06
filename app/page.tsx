@@ -11,6 +11,7 @@ export default function AttendancePage() {
   const [selectedMobile, setSelectedMobile] = useState<string>("");
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [mehmanCount, setMehmanCount] = useState<number>(0);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{
     type: "success" | "info" | "error";
@@ -18,35 +19,41 @@ export default function AttendancePage() {
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Load users whenever selectedMobile changes
-  const loadUsersForMobile = useCallback(async (mobileNumber: string) => {
-    if (!mobileNumber) {
-      setUsers([]);
-      setSelectedUserIds([]);
-      return;
-    }
+  // Load users whenever selectedMobile or kutumbId is selected
+  const loadUsersForMobile = useCallback(
+    async (mobileNumber: string, kutumbId?: number | null) => {
+      if (!mobileNumber && !kutumbId) {
+        setUsers([]);
+        setSelectedUserIds([]);
+        return;
+      }
 
-    setIsLoadingUsers(true);
-    setFeedbackMessage(null);
+      setIsLoadingUsers(true);
+      setFeedbackMessage(null);
 
-    try {
-      const results = await userService.getUsersByMobileNumber(mobileNumber);
-      setUsers(results);
-      setSelectedUserIds([]); // Reset selection on new mobile number selection
-    } catch (error) {
-      console.error("Failed to load users:", error);
-      setFeedbackMessage({
-        type: "error",
-        text: "Something went wrong while fetching users. Please try again.",
-      });
-    } finally {
-      setIsLoadingUsers(false);
-    }
-  }, []);
+      try {
+        const results = await userService.getUsersByMobileNumber(
+          mobileNumber,
+          kutumbId,
+        );
+        setUsers(results);
+        setSelectedUserIds([]); // Reset selection on new mobile number selection
+      } catch (error) {
+        console.error("Failed to load users:", error);
+        setFeedbackMessage({
+          type: "error",
+          text: "Something went wrong while fetching users. Please try again.",
+        });
+      } finally {
+        setIsLoadingUsers(false);
+      }
+    },
+    [],
+  );
 
-  const handleSelectMobileNumber = (mobileNumber: string) => {
+  const handleSelectMobileNumber = (mobileNumber: string, user?: User) => {
     setSelectedMobile(mobileNumber);
-    loadUsersForMobile(mobileNumber);
+    loadUsersForMobile(mobileNumber, user?.kutumbId);
   };
 
   // Toggle individual user checkbox
@@ -79,8 +86,11 @@ export default function AttendancePage() {
         selectedUserIds.includes(u.id),
       );
 
-      // Log the payload to console for verification
-      console.log("Mock Present API payload:", selectedUsersData);
+      // Log the payload (include mehmanCount for future API)
+      console.log("Mock Present API payload:", {
+        users: selectedUsersData,
+        mehmanCount,
+      });
 
       const response = await userService.markUsersPresent(selectedUserIds);
 
@@ -127,10 +137,82 @@ export default function AttendancePage() {
           />
         </section>
 
+        {/* Mehman Counter Section — Below search bar & above user card */}
+        <section aria-label="Mehman Counter" className="w-full">
+          <div className="flex items-center gap-3">
+            <span id="mehman-counter-label" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+              Mehman Count:
+            </span>
+            <div
+              className="inline-flex items-center justify-between w-48 sm:w-56 h-11 px-4 bg-white border border-gray-200 rounded-xl shadow-2xs"
+              role="group"
+              aria-labelledby="mehman-counter-label"
+            >
+              {/* Minus Button */}
+              <button
+                type="button"
+                disabled={mehmanCount <= 0}
+                aria-disabled={mehmanCount <= 0}
+                onClick={() => setMehmanCount((prev) => Math.max(0, prev - 1))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    if (mehmanCount > 0) {
+                      setMehmanCount((prev) => Math.max(0, prev - 1));
+                    }
+                  }
+                }}
+                className={`w-9 h-9 flex items-center justify-center text-2xl font-bold transition select-none rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  mehmanCount <= 0
+                    ? "text-gray-300 cursor-not-allowed"
+                    : "text-blue-600 hover:text-blue-700 active:scale-95 cursor-pointer"
+                }`}
+                aria-label="Decrease mehman count"
+              >
+                <span className="leading-none mb-0.5" aria-hidden="true">−</span>
+              </button>
+
+              {/* Count Display */}
+              <span
+                className="text-lg sm:text-xl font-medium text-gray-600 font-mono select-none px-2"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {mehmanCount}
+              </span>
+
+              {/* Plus Button */}
+              <button
+                type="button"
+                disabled={mehmanCount >= 10}
+                aria-disabled={mehmanCount >= 10}
+                onClick={() => setMehmanCount((prev) => Math.min(10, prev + 1))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    if (mehmanCount < 10) {
+                      setMehmanCount((prev) => Math.min(10, prev + 1));
+                    }
+                  }
+                }}
+                className={`w-9 h-9 flex items-center justify-center text-2xl font-bold transition select-none rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  mehmanCount >= 10
+                    ? "text-gray-300 cursor-not-allowed"
+                    : "text-blue-600 hover:text-blue-700 active:scale-95 cursor-pointer"
+                }`}
+                aria-label="Increase mehman count"
+              >
+                <span className="leading-none mb-0.5" aria-hidden="true">+</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
         {/* Feedback Alert Message */}
         {feedbackMessage && (
           <div
             role="status"
+            aria-live="polite"
             className={`p-4 rounded-md border text-sm flex items-center justify-between transition-all ${
               feedbackMessage.type === "success"
                 ? "bg-green-50 border-green-200 text-green-800"
@@ -146,6 +228,7 @@ export default function AttendancePage() {
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
+                  aria-hidden="true"
                 >
                   <path
                     strokeLinecap="round"
@@ -158,9 +241,16 @@ export default function AttendancePage() {
               <span className="font-medium">{feedbackMessage.text}</span>
             </div>
             <button
+              type="button"
               onClick={() => setFeedbackMessage(null)}
-              className="text-gray-400 hover:text-gray-600 text-sm ml-2 font-semibold"
-              aria-label="Close message"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setFeedbackMessage(null);
+                }
+              }}
+              className="text-gray-400 hover:text-gray-600 text-base ml-2 font-bold p-1 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 cursor-pointer"
+              aria-label="Close notification"
             >
               ×
             </button>

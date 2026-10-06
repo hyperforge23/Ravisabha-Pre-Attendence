@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { User } from "@/types/user";
 
 interface UserCardProps {
@@ -23,8 +23,33 @@ export const UserCard: React.FC<UserCardProps> = ({
   isSubmitting = false,
 }) => {
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const [currentDate, setCurrentDate] = useState<string>("");
+  const [currentTime, setCurrentTime] = useState<string>("");
 
-  const allSelected = users.length > 0 && selectedUserIds.length === users.length;
+  useEffect(() => {
+    const updateDateTime = () => {
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, "0");
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const year = now.getFullYear();
+      setCurrentDate(`${day}-${month}-${year}`);
+
+      let hours = now.getHours();
+      const minutes = String(now.getMinutes()).padStart(2, "0");
+      const ampm = hours >= 12 ? "PM" : "AM";
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      const strHours = String(hours).padStart(2, "0");
+      setCurrentTime(`${strHours}:${minutes} ${ampm}`);
+    };
+
+    updateDateTime();
+    const interval = setInterval(updateDateTime, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const allSelected =
+    users.length > 0 && selectedUserIds.length === users.length;
   const isIndeterminate =
     selectedUserIds.length > 0 && selectedUserIds.length < users.length;
 
@@ -38,24 +63,39 @@ export const UserCard: React.FC<UserCardProps> = ({
   if (users.length === 0) {
     return (
       <div className="w-full bg-white border border-gray-200 rounded-lg p-6 text-center text-gray-500 shadow-xs">
-        <p className="text-sm">No users found for mobile number <strong className="text-gray-800">{mobileNumber}</strong>.</p>
+        <p className="text-sm">
+          No users found for mobile number{" "}
+          <strong className="text-gray-800">{mobileNumber}</strong>.
+        </p>
       </div>
     );
   }
 
+  const primaryUser = users[0];
+  const gujaratiFullName =
+    primaryUser.gujaratiName ||
+    [
+      primaryUser.firstNameGuj,
+      primaryUser.middleNameGuj,
+      primaryUser.lastNameGuj,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
   return (
-    <div className="w-full bg-white border border-gray-200 rounded-lg shadow-xs overflow-hidden">
-      {/* Card Header — Mobile number left, Select All right */}
-      <div className="bg-gray-50 px-4 sm:px-6 py-3.5 border-b border-gray-200 flex items-center justify-between">
-        <div>
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider block">
-            Mobile Number
-          </span>
-          <span className="text-base sm:text-lg font-semibold text-gray-900 font-mono">
-            {mobileNumber}
-          </span>
-        </div>
-        <label className="flex items-center space-x-2 cursor-pointer select-none">
+    <div
+      className="w-full bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden"
+      role="region"
+      aria-label="Member attendance selection"
+    >
+      {/* ── Member List Section (Header with Select All) ── */}
+      <div className="bg-gray-50 px-5 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          Members ({users.length})
+        </span>
+        <label
+          className="flex items-center space-x-2 cursor-pointer select-none rounded-md px-1 py-0.5 focus-within:ring-2 focus-within:ring-green-500"
+        >
           {selectedUserIds.length > 0 && (
             <span className="text-xs text-gray-400">
               ({selectedUserIds.length} of {users.length})
@@ -67,27 +107,49 @@ export const UserCard: React.FC<UserCardProps> = ({
             type="checkbox"
             checked={allSelected}
             onChange={onToggleSelectAll}
-            aria-label="Select all users"
-            className="w-4 h-4 text-green-600 bg-white border-gray-300 rounded focus:ring-green-500 focus:ring-2 cursor-pointer"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onToggleSelectAll();
+              }
+            }}
+            aria-label="Select all members for attendance"
+            className="w-4 h-4 text-green-600 bg-white border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-green-500 cursor-pointer outline-none"
           />
         </label>
       </div>
 
-      {/* User List */}
-      <div className="divide-y divide-gray-100">
+      {/* User Rows */}
+      <div className="divide-y divide-gray-100 bg-white" role="group" aria-label="Members list">
         {users.map((user) => {
           const isSelected = selectedUserIds.includes(user.id);
+          const userGujarati =
+            user.gujaratiName ||
+            [user.firstNameGuj, user.middleNameGuj, user.lastNameGuj]
+              .filter(Boolean)
+              .join(" ");
+
           return (
             <div
               key={user.id}
               onClick={() => onToggleUser(user.id)}
-              className={`px-4 sm:px-6 py-3.5 flex items-center justify-between cursor-pointer transition ${
+              className={`px-5 sm:px-6 py-3.5 flex items-center justify-between cursor-pointer transition ${
                 isSelected ? "bg-green-50/40" : "hover:bg-gray-50"
               }`}
             >
               <div className="space-y-0.5">
-                <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                <p className="text-xs text-gray-500 font-mono">{user.mobileNumber}</p>
+                <p className="text-sm font-medium text-gray-900 flex items-baseline gap-1.5 flex-wrap">
+                  <span>{user.name}</span>
+                  {userGujarati && (
+                    <span className="text-gray-500 text-xs font-normal">
+                      ({userGujarati})
+                    </span>
+                  )}
+                </p>
+                <div className="flex items-center gap-3 text-xs text-gray-500 font-mono">
+                  {user.smkNo && <span>SMK No : {user.smkNo}</span>}
+                  <span>{user.mobileNo || user.mobileNumber}</span>
+                </div>
               </div>
 
               <div className="flex items-center pl-4">
@@ -96,8 +158,14 @@ export const UserCard: React.FC<UserCardProps> = ({
                   checked={isSelected}
                   onChange={() => onToggleUser(user.id)}
                   onClick={(e) => e.stopPropagation()}
-                  aria-label={`Select ${user.name}`}
-                  className="w-4 h-4 text-green-600 bg-white border-gray-300 rounded focus:ring-green-500 focus:ring-2 cursor-pointer"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onToggleUser(user.id);
+                    }
+                  }}
+                  aria-label={`Select ${user.name} for attendance`}
+                  className="w-4 h-4 text-green-600 bg-white border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-green-500 cursor-pointer outline-none"
                 />
               </div>
             </div>
@@ -105,13 +173,22 @@ export const UserCard: React.FC<UserCardProps> = ({
         })}
       </div>
 
-      {/* Card Action Footer */}
-      <div className="px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-end gap-3">
+      {/* ── Card Action Footer ── */}
+      <div className="px-5 sm:px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end">
         <button
           type="button"
           disabled={selectedUserIds.length === 0 || isSubmitting}
+          aria-disabled={selectedUserIds.length === 0 || isSubmitting}
           onClick={onMarkPresent}
-          className={`w-full sm:w-auto px-6 py-2.5 rounded-md text-sm font-medium text-white transition shadow-xs focus:outline-hidden focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              if (selectedUserIds.length > 0 && !isSubmitting) {
+                onMarkPresent();
+              }
+            }
+          }}
+          className={`w-full sm:w-auto px-8 py-2.5 rounded-md text-sm font-semibold text-white transition shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-600 ${
             selectedUserIds.length === 0 || isSubmitting
               ? "bg-gray-300 text-gray-500 cursor-not-allowed"
               : "bg-[#28a745] hover:bg-[#218838] active:bg-[#1e7e34] cursor-pointer"
@@ -120,8 +197,8 @@ export const UserCard: React.FC<UserCardProps> = ({
           {isSubmitting
             ? "Marking..."
             : selectedUserIds.length > 0
-            ? `Present (${selectedUserIds.length})`
-            : "Present"}
+              ? `Present (${selectedUserIds.length})`
+              : "Present"}
         </button>
       </div>
     </div>

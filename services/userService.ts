@@ -17,13 +17,21 @@ class ApiUserService implements UserService {
     return data.users || [];
   }
 
-  async getUsersByMobileNumber(mobileNumber: string): Promise<User[]> {
+  async getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null): Promise<User[]> {
     const cleanNumber = mobileNumber.trim();
-    if (!cleanNumber) return [];
+    let url = "";
 
-    const res = await fetch(`/api/search?mobile=${encodeURIComponent(cleanNumber)}`);
+    if (kutumbId && !isNaN(Number(kutumbId))) {
+      url = `/api/search?kutumbId=${encodeURIComponent(String(kutumbId))}`;
+    } else if (cleanNumber) {
+      url = `/api/search?mobile=${encodeURIComponent(cleanNumber)}`;
+    } else {
+      return [];
+    }
+
+    const res = await fetch(url);
     if (!res.ok) {
-      throw new Error(`Failed to fetch users by mobile: ${res.statusText}`);
+      throw new Error(`Failed to fetch users: ${res.statusText}`);
     }
     const data = await res.json();
     return data.users || [];
@@ -44,41 +52,37 @@ class ApiUserService implements UserService {
 class MockUserService implements UserService {
   async searchUsers(query: string): Promise<User[]> {
     await new Promise((resolve) => setTimeout(resolve, 80));
-    const cleanQuery = query.trim().toLowerCase();
+    const cleanQuery = query.trim();
     if (!cleanQuery) return [];
 
-    const words = cleanQuery.split(/\s+/).filter(Boolean);
-
+    // Search ONLY on MobileNo — numeric prefix match
     return mockUsers
       .filter((user) => {
-        return words.every((word) => {
-          const fields = [
-            user.name,
-            user.mobileNumber,
-            user.mobileNo,
-            user.smkNo,
-            user.firstName,
-            user.middleName,
-            user.lastName,
-            user.firstNameGuj,
-            user.middleNameGuj,
-            user.lastNameGuj,
-          ]
-            .filter(Boolean)
-            .map((f) => (f as string).toLowerCase());
-
-          return fields.some((field) => field.includes(word));
-        });
+        const mobile = user.mobileNo || user.mobileNumber || "";
+        return mobile.startsWith(cleanQuery);
       })
       .slice(0, 10);
   }
 
-  async getUsersByMobileNumber(mobileNumber: string): Promise<User[]> {
+  async getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null): Promise<User[]> {
     await new Promise((resolve) => setTimeout(resolve, 100));
     const cleanNumber = mobileNumber.trim();
-    return mockUsers.filter(
+
+    if (kutumbId) {
+      const family = mockUsers.filter((u) => u.kutumbId === kutumbId);
+      if (family.length > 0) return family;
+    }
+
+    const matched = mockUsers.filter(
       (user) => user.mobileNumber === cleanNumber || user.mobileNo === cleanNumber
     );
+
+    const targetKutumbId = matched.find((u) => u.kutumbId !== undefined && u.kutumbId !== null)?.kutumbId;
+    if (targetKutumbId) {
+      return mockUsers.filter((u) => u.kutumbId === targetKutumbId);
+    }
+
+    return matched;
   }
 
   async markUsersPresent(userIds: string[]): Promise<{ success: boolean; count: number }> {
@@ -91,5 +95,7 @@ class MockUserService implements UserService {
 }
 
 export { MockUserService, ApiUserService };
-export const userService: UserService = new MockUserService();
+
+// ✅ Using real MongoDB API — switch back to MockUserService for offline testing
+export const userService: UserService = new ApiUserService();
 
