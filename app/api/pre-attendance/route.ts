@@ -3,6 +3,7 @@ import { connectDb } from "@/lib/mongodb";
 import PreAttendance from "@/models/PreAttendence";
 import RavisabhaDetails from "@/models/RavisabhaDetails";
 import SmkDetail from "@/models/SmkDetail";
+import mongoose from "mongoose";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
         userId: string;
         SmkId: string;
         name: string;
+        mehmanCount?: number;
       }>;
     };
 
@@ -51,11 +53,11 @@ export async function POST(request: NextRequest) {
 
     for (let i = 0; i < members.length; i++) {
       const m = members[i];
-      if (!m.smkDetailId || !m.userId || !m.SmkId || !m.name) {
+      if (!m.smkDetailId || !m.SmkId || !m.name) {
         return NextResponse.json(
           {
             success: false,
-            error: `Member at index ${i} is missing one or more required fields: smkDetailId, userId, SmkId, name.`,
+            error: `Member at index ${i} is missing one or more required fields: smkDetailId, SmkId, name.`,
           },
           { status: 400 }
         );
@@ -67,20 +69,16 @@ export async function POST(request: NextRequest) {
     // Resolve the active Ravisabha where pre_attendance === true
     const activeRavisabha = await RavisabhaDetails.findOne({ pre_attendance: true })
       .select("_id date")
-      .lean<{ _id: unknown; date: Date }>();
+      .lean<{ _id: mongoose.Types.ObjectId; date: Date }>();
 
     if (!activeRavisabha) {
       return NextResponse.json(
-        {
-          success: false,
-          error:
-            "No active Ravisabha found.",
-        },
+        { success: false, error: "No active Ravisabha found." },
         { status: 404 }
       );
     }
 
-    const ravisabhaId = (activeRavisabha._id as { toString(): string }).toString();
+    const ravisabhaId = activeRavisabha._id.toString();
     const now = new Date();
 
     const docs = members.map((m) => ({
@@ -91,7 +89,10 @@ export async function POST(request: NextRequest) {
       name: m.name,
       status: "present" as const,
       date: now,
+      mehmanCount: m.mehmanCount ?? 0,
     }));
+
+    console.log("[pre-attendance] inserting docs:", JSON.stringify(docs.map(d => ({ SmkId: d.SmkId, mehmanCount: d.mehmanCount }))));
 
     // ordered:false — skip duplicates and continue inserting the rest
     let insertedCount = 0;
@@ -147,15 +148,17 @@ export async function POST(request: NextRequest) {
  * Returns all pre-attendance entries for the currently active Ravisabha.
  *
  * Optional query param:
- *   ?mobile=9876543210  -> filter records by the member mobile number
+ *   ?mobile=9876543210  -> filter records by the member's mobile number
+ *   ?smkDetailIds=id1,id2  -> filter records by specific smkDetailIds (comma-separated)
  */
 export async function GET(request: NextRequest) {
   try {
     await connectDb();
 
+    // Use _id (not a non-existent ravisabhaId field) when resolving the active ravisabha
     const activeRavisabha = await RavisabhaDetails.findOne({ pre_attendance: true })
-      .select("ravisabhaId date")
-      .lean<{ ravisabhaId: string; date: Date }>();
+      .select("_id date")
+      .lean<{ _id: mongoose.Types.ObjectId; date: Date }>();
 
     if (!activeRavisabha) {
       return NextResponse.json(
@@ -164,10 +167,33 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const ravisabhaObjectId = activeRavisabha.ravisabhaId;
+    const ravisabhaId = activeRavisabha._id.toString();
     const { searchParams } = request.nextUrl;
     const mobileParam = searchParams.get("mobile");
+    const smkDetailIdsParam = searchParams.get("smkDetailIds");
 
+    // Filter by specific smkDetailIds (used by the toggle feature to check already-marked members)
+    if (smkDetailIdsParam) {
+      const ids = smkDetailIdsParam.split(",").map((id) => id.trim()).filter(Boolean);
+      if (ids.length === 0) {
+        return NextResponse.json({ success: true, ravisabhaId, ravisabhaDate: activeRavisabha.date, total: 0, records: [] });
+      }
+
+      const records = await PreAttendance.find({
+        ravisabhaId,
+        smkDetailId: { $in: ids },
+      }).lean();
+
+      return NextResponse.json({
+        success: true,
+        ravisabhaId,
+        ravisabhaDate: activeRavisabha.date,
+        total: records.length,
+        records,
+      });
+    }
+
+    // Filter by mobile number — look up matching SmkDetail docs first
     if (mobileParam) {
       const trimmed = mobileParam.trim();
       if (!/^\d{10}$/.test(trimmed)) {
@@ -180,37 +206,187 @@ export async function GET(request: NextRequest) {
       const smkDocs = await SmkDetail.find(
         { MobileNo: Number(trimmed) },
         { _id: 1 }
-      ).lean<{ _id: unknown }[]>();
+      ).lean<{ _id: mongoose.Types.ObjectId }[]>();
 
-      const smkIds = smkDocs.map((d) => d._id);
+      const smkIds = smkDocs.map((d) => d._id.toString());
 
       const records = await PreAttendance.find({
-        ravisabhaId: ravisabhaObjectId,
+        ravisabhaId,
         smkDetailId: { $in: smkIds },
       }).lean();
 
       return NextResponse.json({
         success: true,
-        ravisabhaId: ravisabhaObjectId,
+        ravisabhaId,
         ravisabhaDate: activeRavisabha.date,
         total: records.length,
         records,
       });
     }
 
-    const records = await PreAttendance.find({
-      ravisabhaId: ravisabhaObjectId,
-    }).lean();
+    // No filter — return all records for the active Ravisabha
+    const records = await PreAttendance.find({ ravisabhaId }).lean();
 
     return NextResponse.json({
       success: true,
-      ravisabhaId: ravisabhaObjectId,
+      ravisabhaId,
       ravisabhaDate: activeRavisabha.date,
       total: records.length,
       records,
     });
   } catch (error) {
     console.error("[/api/pre-attendance] GET Error:", error);
+    return NextResponse.json(
+      { success: false, error: "Internal server error. Please try again." },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/pre-attendance
+ *
+ * Updates the mehmanCount on an existing pre-attendance record for the active Ravisabha.
+ * Used when the first (searched) member is already marked present and the mehman counter changes.
+ *
+ * Body:
+ * {
+ *   smkDetailId: string,
+ *   mehmanCount: number
+ * }
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Invalid JSON body." },
+        { status: 400 }
+      );
+    }
+
+    const { smkDetailId, mehmanCount } = body as {
+      smkDetailId?: string;
+      mehmanCount?: number;
+    };
+
+    if (!smkDetailId) {
+      return NextResponse.json(
+        { success: false, error: "smkDetailId is required." },
+        { status: 400 }
+      );
+    }
+
+    if (typeof mehmanCount !== "number" || mehmanCount < 0) {
+      return NextResponse.json(
+        { success: false, error: "mehmanCount must be a non-negative number." },
+        { status: 400 }
+      );
+    }
+
+    await connectDb();
+
+    const activeRavisabha = await RavisabhaDetails.findOne({ pre_attendance: true })
+      .select("_id")
+      .lean<{ _id: mongoose.Types.ObjectId }>();
+
+    if (!activeRavisabha) {
+      return NextResponse.json(
+        { success: false, error: "No active Ravisabha found." },
+        { status: 404 }
+      );
+    }
+
+    const ravisabhaId = activeRavisabha._id.toString();
+
+    const updated = await PreAttendance.findOneAndUpdate(
+      { ravisabhaId, smkDetailId },
+      { $set: { mehmanCount } },
+      { new: true }
+    );
+
+    if (!updated) {
+      return NextResponse.json(
+        { success: false, error: "Attendance record not found for this member." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      smkDetailId,
+      mehmanCount: updated.mehmanCount,
+    });
+  } catch (error) {
+    console.error("[/api/pre-attendance] PATCH Error:", error);
+    return NextResponse.json(
+      { success: false, error: "Internal server error. Please try again." },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/pre-attendance
+ *
+ * Removes pre-attendance records for the given smkDetailIds under the active Ravisabha.
+ * Used when a user unchecks a member who was already marked present.
+ *
+ * Body:
+ * {
+ *   smkDetailIds: string[]
+ * }
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Invalid JSON body." },
+        { status: 400 }
+      );
+    }
+
+    const { smkDetailIds } = body as { smkDetailIds?: string[] };
+
+    if (!Array.isArray(smkDetailIds) || smkDetailIds.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Request body must include a non-empty `smkDetailIds` array." },
+        { status: 400 }
+      );
+    }
+
+    await connectDb();
+
+    const activeRavisabha = await RavisabhaDetails.findOne({ pre_attendance: true })
+      .select("_id")
+      .lean<{ _id: mongoose.Types.ObjectId }>();
+
+    if (!activeRavisabha) {
+      return NextResponse.json(
+        { success: false, error: "No active Ravisabha found." },
+        { status: 404 }
+      );
+    }
+
+    const ravisabhaId = activeRavisabha._id.toString();
+
+    const result = await PreAttendance.deleteMany({
+      ravisabhaId,
+      smkDetailId: { $in: smkDetailIds },
+    });
+
+    return NextResponse.json({
+      success: true,
+      deleted: result.deletedCount,
+      ravisabhaId,
+    });
+  } catch (error) {
+    console.error("[/api/pre-attendance] DELETE Error:", error);
     return NextResponse.json(
       { success: false, error: "Internal server error. Please try again." },
       { status: 500 }
