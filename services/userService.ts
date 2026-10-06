@@ -1,6 +1,13 @@
 import { User, UserService } from "@/types/user";
 import { mockUsers } from "@/mock/users.mock";
 
+export interface AttendanceMember {
+  smkDetailId: string; // MongoDB _id of the SmkDetail doc (= User.id)
+  userId: string;      // ID of the person submitting attendance
+  SmkId: string;       // Human-readable SMK number (= User.smkNo)
+  name: string;        // Full name of the member
+}
+
 /**
   * API implementation of UserService connecting to /api/search route.
   */
@@ -37,11 +44,47 @@ class ApiUserService implements UserService {
     return data.users || [];
   }
 
-  async markUsersPresent(userIds: string[]): Promise<{ success: boolean; count: number }> {
-    // TODO: attendance API
+  /**
+   * Bulk-insert pre-attendance for the selected members.
+   *
+   * @param members - Full member data required by POST /api/pre-attendance
+   * @param submitterId - The userId of the person submitting (e.g. a logged-in admin id or a static key)
+   */
+  async markUsersPresent(
+    userIds: string[],
+    members?: AttendanceMember[]
+  ): Promise<{ success: boolean; count: number }> {
+    if (!members || members.length === 0) {
+      return { success: false, count: 0 };
+    }
+
+    const res = await fetch("/api/pre-attendance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ members }),
+    });
+
+    // Read body as text first to avoid SyntaxError when server returns HTML error pages
+    const text = await res.text();
+    let data: { inserted?: number; error?: string } = {};
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Server returned a non-JSON body (e.g. Next.js error HTML page)
+      throw new Error(
+        res.ok
+          ? "Unexpected response from server."
+          : `Server error (${res.status}): ${res.statusText}`
+      );
+    }
+
+    if (!res.ok) {
+      throw new Error(data?.error || `Failed to mark attendance: ${res.statusText}`);
+    }
+
     return {
       success: true,
-      count: userIds.length,
+      count: data.inserted ?? members.length,
     };
   }
 }

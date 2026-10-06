@@ -22,7 +22,8 @@ export interface User {
 }
 
 export interface UserService {
-  searchUsers(query: string): Promise<User[]>;
-  getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null): Promise<User[]>;
-  markUsersPresent(userIds: string[]): Promise<{ success: boolean; count: number }>;
+  searchUsers(query: string, signal?: AbortSignal): Promise<User[]>;
+  getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null, signal?: AbortSignal): Promise<User[]>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  markUsersPresent(userIds: string[], members?: any[]): Promise<{ success: boolean; count: number }>;
 }

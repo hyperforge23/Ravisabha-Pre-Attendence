@@ -5,7 +5,7 @@ import { Header } from "@/components/Header";
 import { MobileSearch } from "@/components/MobileSearch";
 import { UserCard } from "@/components/UserCard";
 import { User } from "@/types/user";
-import { userService } from "@/services/userService";
+import { userService, AttendanceMember } from "@/services/userService";
 
 export default function AttendancePage() {
   const [selectedMobile, setSelectedMobile] = useState<string>("");
@@ -86,19 +86,23 @@ export default function AttendancePage() {
         selectedUserIds.includes(u.id),
       );
 
-      // Log the payload (include mehmanCount for future API)
-      console.log("Mock Present API payload:", {
-        users: selectedUsersData,
-        mehmanCount,
-      });
+      // Build the members payload for POST /api/pre-attendance
+      // userId: use a real auth ID here once authentication is added.
+      // For now, "system" is used as a placeholder submitter ID.
+      const members: AttendanceMember[] = selectedUsersData.map((u) => ({
+        smkDetailId: u.id,
+        userId: "system",
+        SmkId: u.smkNo || u.id,
+        name: u.name,
+      }));
 
-      const response = await userService.markUsersPresent(selectedUserIds);
+      const response = await userService.markUsersPresent(selectedUserIds, members);
 
       if (response.success) {
         const count = response.count;
         const successText = `${count} ${
-          count === 1 ? "user" : "users"
-        } marked as present.`;
+          count === 1 ? "member" : "members"
+        } marked as present successfully.`;
 
         setFeedbackMessage({
           type: "success",
@@ -112,7 +116,10 @@ export default function AttendancePage() {
       console.error("Error marking present:", error);
       setFeedbackMessage({
         type: "error",
-        text: "Failed to mark attendance. Please try again.",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Failed to mark attendance. Please try again.",
       });
     } finally {
       setIsSubmitting(false);
