@@ -5,12 +5,15 @@ import { Header } from "@/components/Header";
 import { MobileSearch } from "@/components/MobileSearch";
 import { UserCard } from "@/components/UserCard";
 import { User } from "@/types/user";
-import { userService } from "@/services/userService";
+import { userService, AttendanceMember } from "@/services/userService";
 
 export default function AttendancePage() {
   const [selectedMobile, setSelectedMobile] = useState<string>("");
   const [users, setUsers] = useState<User[]>([]);
+  // IDs currently checked in the UI (includes both newly-selected and already-marked)
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  // IDs that already have a DB record for the active Ravisabha
+  const [alreadyMarkedIds, setAlreadyMarkedIds] = useState<string[]>([]);
   const [mehmanCount, setMehmanCount] = useState<number>(0);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{
@@ -19,12 +22,13 @@ export default function AttendancePage() {
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Load users whenever selectedMobile or kutumbId is selected
+  // Load users whenever a mobile / kutumbId is selected, then check which are already marked
   const loadUsersForMobile = useCallback(
     async (mobileNumber: string, kutumbId?: number | null) => {
       if (!mobileNumber && !kutumbId) {
         setUsers([]);
         setSelectedUserIds([]);
+        setAlreadyMarkedIds([]);
         return;
       }
 
@@ -37,13 +41,26 @@ export default function AttendancePage() {
           kutumbId,
         );
         setUsers(results);
-        setSelectedUserIds([]); // Reset selection on new mobile number selection
+
+        // Check which of those members are already marked present
+        if (results.length > 0) {
+          const ids = results.map((u) => u.id);
+          const marked = await userService.getMarkedIds(ids);
+          setAlreadyMarkedIds(marked);
+          // Pre-check the already-marked members
+          setSelectedUserIds(marked);
+        } else {
+          setAlreadyMarkedIds([]);
+          setSelectedUserIds([]);
+        }
       } catch (error) {
         console.error("Failed to load users:", error);
         setFeedbackMessage({
           type: "error",
           text: "Something went wrong while fetching users. Please try again.",
         });
+        setAlreadyMarkedIds([]);
+        setSelectedUserIds([]);
       } finally {
         setIsLoadingUsers(false);
       }
@@ -56,63 +73,145 @@ export default function AttendancePage() {
     loadUsersForMobile(mobileNumber, user?.kutumbId);
   };
 
-  // Toggle individual user checkbox
-  const handleToggleUser = (userId: string) => {
-    setSelectedUserIds((prev) =>
-      prev.includes(userId)
-        ? prev.filter((id) => id !== userId)
-        : [...prev, userId],
-    );
-  };
+  // Toggle individual user checkbox.
+  // If the member is already marked (in DB) and is being unchecked → delete the record.
+  // If the member is not yet marked and is being checked → just add to selection.
+  const handleToggleUser = useCallback(
+    async (userId: string) => {
+      const isCurrentlySelected = selectedUserIds.includes(userId);
+      const isAlreadyMarked = alreadyMarkedIds.includes(userId);
+
+      if (isCurrentlySelected && isAlreadyMarked) {
+        // Uncheck an already-DB-saved record → delete it
+        setIsSubmitting(true);
+        try {
+          await userService.removeAttendance([userId]);
+          setAlreadyMarkedIds((prev) => prev.filter((id) => id !== userId));
+          setSelectedUserIds((prev) => prev.filter((id) => id !== userId));
+          setFeedbackMessage({
+            type: "info",
+            text: "Attendance removed for the selected member.",
+          });
+        } catch (error) {
+          console.error("Failed to remove attendance:", error);
+          setFeedbackMessage({
+            type: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Failed to remove attendance. Please try again.",
+          });
+        } finally {
+          setIsSubmitting(false);
+        }
+      } else {
+        // Normal UI-only toggle (no DB call yet — DB write happens on "Present" button)
+        setSelectedUserIds((prev) =>
+          isCurrentlySelected
+            ? prev.filter((id) => id !== userId)
+            : [...prev, userId],
+        );
+      }
+    },
+    [selectedUserIds, alreadyMarkedIds],
+  );
 
   // Toggle Select All checkbox
   const handleToggleSelectAll = () => {
     if (selectedUserIds.length === users.length) {
-      // If all selected, unselect all
       setSelectedUserIds([]);
     } else {
-      // Select all
       setSelectedUserIds(users.map((u) => u.id));
     }
   };
 
-  // Handle Present Button Click
+  // Handle Present Button Click — only submits members NOT already in the DB
   const handleMarkPresent = async () => {
-    if (selectedUserIds.length === 0) return;
+    // Filter out already-marked members — no need to re-insert them
+    const newlySelectedIds = selectedUserIds.filter(
+      (id) => !alreadyMarkedIds.includes(id),
+    );
+
+    // The first user shown in the card is the "primary" (searched) person.
+    // If they are already marked, update their mehmanCount instead of inserting.
+    const primaryUser = users[0];
+    const primaryIsAlreadyMarked = primaryUser && alreadyMarkedIds.includes(primaryUser.id);
+
+    if (newlySelectedIds.length === 0) {
+      // If primary is already marked and mehman count is set, just update it
+      if (primaryIsAlreadyMarked && mehmanCount > 0) {
+        setIsSubmitting(true);
+        try {
+          await userService.updateMehmanCount(primaryUser.id, mehmanCount);
+          setFeedbackMessage({
+            type: "success",
+            text: `Mehman count updated to ${mehmanCount} for ${primaryUser.name}.`,
+          });
+          // Clear card after successful update
+          setUsers([]);
+          setSelectedUserIds([]);
+          setAlreadyMarkedIds([]);
+          setSelectedMobile("");
+          setMehmanCount(0);
+        } catch (error) {
+          setFeedbackMessage({
+            type: "error",
+            text: error instanceof Error ? error.message : "Failed to update mehman count.",
+          });
+        } finally {
+          setIsSubmitting(false);
+        }
+        return;
+      }
+      setFeedbackMessage({
+        type: "info",
+        text: "All selected members are already marked as present.",
+      });
+      return;
+    }
 
     setIsSubmitting(true);
     try {
       const selectedUsersData = users.filter((u) =>
-        selectedUserIds.includes(u.id),
+        newlySelectedIds.includes(u.id),
       );
 
-      // Log the payload (include mehmanCount for future API)
-      console.log("Mock Present API payload:", {
-        users: selectedUsersData,
-        mehmanCount,
-      });
+      // Build the members payload for POST /api/pre-attendance
+      // The first user in the overall list (users[0]) is the searched person —
+      // attach mehmanCount to their record only.
+      const members: AttendanceMember[] = selectedUsersData.map((u) => ({
+        smkDetailId: u.id,
+        userId: "system", // placeholder until auth is added
+        SmkId: u.smkNo || u.id,
+        name: u.name,
+        mehmanCount: u.id === primaryUser?.id ? mehmanCount : 0,
+      }));
 
-      const response = await userService.markUsersPresent(selectedUserIds);
+      const response = await userService.markUsersPresent(newlySelectedIds, members);
 
       if (response.success) {
         const count = response.count;
-        const successText = `${count} ${
-          count === 1 ? "user" : "users"
-        } marked as present.`;
 
         setFeedbackMessage({
           type: "success",
-          text: successText,
+          text: `${count} ${count === 1 ? "member" : "members"} marked as present successfully.${mehmanCount > 0 ? ` Mehman count: ${mehmanCount}.` : ""}`,
         });
 
-        // Clear selection after marking present
+        // Clear the card, search input, and counter after successful submission
+        setUsers([]);
         setSelectedUserIds([]);
+        setAlreadyMarkedIds([]);
+        setSelectedMobile("");
+        setMehmanCount(0);
       }
     } catch (error) {
       console.error("Error marking present:", error);
       setFeedbackMessage({
         type: "error",
-        text: "Failed to mark attendance. Please try again.",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Failed to mark attendance. Please try again.",
       });
     } finally {
       setIsSubmitting(false);
@@ -238,6 +337,22 @@ export default function AttendancePage() {
                   />
                 </svg>
               )}
+              {feedbackMessage.type === "info" && (
+                <svg
+                  className="w-5 h-5 text-blue-600 shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z"
+                  />
+                </svg>
+              )}
               <span className="font-medium">{feedbackMessage.text}</span>
             </div>
             <button
@@ -277,6 +392,7 @@ export default function AttendancePage() {
               mobileNumber={selectedMobile}
               users={users}
               selectedUserIds={selectedUserIds}
+              alreadyMarkedIds={alreadyMarkedIds}
               onToggleUser={handleToggleUser}
               onToggleSelectAll={handleToggleSelectAll}
               onMarkPresent={handleMarkPresent}
