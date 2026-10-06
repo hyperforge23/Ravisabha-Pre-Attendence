@@ -1,12 +1,10 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IAttendance extends Document {
-    smkDetailId: mongoose.Types.ObjectId;
-    ravisabhaId?: mongoose.Types.ObjectId;
-    status: "present" | "absent";
-    date: Date;
-    SmkId: string;
-    name: string;
+    smkDetailId?: mongoose.Types.ObjectId;
+    ravisabhaId: mongoose.Types.ObjectId;
+    SmkId?: string;
+    familyCount?: number;
     mehmanCount?: number;
 }
 
@@ -15,26 +13,18 @@ const PreAttendanceSchema: Schema<IAttendance> = new Schema(
         smkDetailId: {
             type: Schema.Types.ObjectId,
             ref: "smkdetails",
-            required: true,
         },
         ravisabhaId: {
             type: Schema.Types.ObjectId,
             ref: "ravisabha_details",
+            required: true,
         },
-        name: {
-            type: String,
-        },
-        status: {
-            type: String,
-            enum: ["present", "absent"],
-            default: "absent",
-        },
-        SmkId: { type: String, required: true },
-        date: {
-            type: Date,
-            default: Date.now,
-        },
+        SmkId: { type: String },
         mehmanCount: {
+            type: Number,
+            default: 0,
+        },
+        familyCount: {
             type: Number,
             default: 0,
         },

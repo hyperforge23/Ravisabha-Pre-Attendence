@@ -2,10 +2,9 @@ import { User, UserService } from "@/types/user";
 import { mockUsers } from "@/mock/users.mock";
 
 export interface AttendanceMember {
-  smkDetailId: string;   // MongoDB _id of the SmkDetail doc (= User.id)
-  userId: string;        // ID of the person submitting attendance
-  SmkId: string;         // Human-readable SMK number (= User.smkNo)
-  name: string;          // Full name of the member
+  smkDetailId?: string;  // MongoDB _id of the SmkDetail doc (= User.id); omitted for counter-only records
+  SmkId?: string;        // Human-readable SMK number; omitted for counter-only records
+  familyCount?: number;  // Only set on the first (searched) member
   mehmanCount?: number;  // Only set on the first (searched) member
 }
 
@@ -26,10 +25,10 @@ export interface AttendanceService extends UserService {
   removeAttendance(smkDetailIds: string[]): Promise<{ success: boolean; deleted: number }>;
 
   /**
-   * Update the mehmanCount on the first member's pre-attendance record.
-   * Called when a member is already marked present and the mehman counter changes.
+   * Updates the mehmanCount and familyCount on the first member's already-saved record.
+   * Called when a member is already marked present and the counters change.
    */
-  updateMehmanCount(smkDetailId: string, mehmanCount: number): Promise<{ success: boolean }>;
+  updateMehmanCount(smkDetailId: string, mehmanCount: number, familyCount: number): Promise<{ success: boolean }>;
 }
 
 /**
@@ -170,12 +169,13 @@ class ApiUserService implements AttendanceService {
    */
   async updateMehmanCount(
     smkDetailId: string,
-    mehmanCount: number
+    mehmanCount: number,
+    familyCount: number
   ): Promise<{ success: boolean }> {
     const res = await fetch("/api/pre-attendance", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ smkDetailId, mehmanCount }),
+      body: JSON.stringify({ smkDetailId, mehmanCount, familyCount }),
     });
 
     const text = await res.text();
@@ -270,7 +270,8 @@ class MockUserService implements AttendanceService {
 
   async updateMehmanCount(
     _smkDetailId: string,
-    _mehmanCount: number
+    _mehmanCount: number,
+    _familyCount: number
   ): Promise<{ success: boolean }> {
     await new Promise((resolve) => setTimeout(resolve, 50));
     return { success: true };
