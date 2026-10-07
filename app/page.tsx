@@ -10,10 +10,10 @@ import { userService, AttendanceMember } from "@/services/userService";
 export default function AttendancePage() {
   const [selectedMobile, setSelectedMobile] = useState<string>("");
   const [users, setUsers] = useState<User[]>([]);
-  // IDs currently checked in the UI (includes both newly-selected and already-marked)
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  // IDs that already have a DB record for the active Ravisabha
-  const [alreadyMarkedIds, setAlreadyMarkedIds] = useState<string[]>([]);
+  // Track status for each user: undefined = not marked, "Present" or "Absent" = marked
+  const [userStatus, setUserStatus] = useState<Record<string, "Present" | "Absent" | undefined>>({});
+  // Track which users were originally marked (to distinguish new changes from existing records)
+  const [originalStatus, setOriginalStatus] = useState<Record<string, "Present" | "Absent" | undefined>>({});
   const [mehmanCount, setMehmanCount] = useState<number>(0);
   const [familyCount, setFamilyCount] = useState<number>(0);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
@@ -23,13 +23,13 @@ export default function AttendancePage() {
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Load users whenever a mobile / kutumbId is selected, then check which are already marked
+  // Load users whenever a mobile / kutumbId is selected, then check their current status
   const loadUsersForMobile = useCallback(
     async (mobileNumber: string, kutumbId?: number | null) => {
       if (!mobileNumber && !kutumbId) {
         setUsers([]);
-        setSelectedUserIds([]);
-        setAlreadyMarkedIds([]);
+        setUserStatus({});
+        setOriginalStatus({});
         return;
       }
 
@@ -43,16 +43,15 @@ export default function AttendancePage() {
         );
         setUsers(results);
 
-        // Check which of those members are already marked present
+        // Fetch current attendance status for these users
         if (results.length > 0) {
           const ids = results.map((u) => u.id);
-          const marked = await userService.getMarkedIds(ids);
-          setAlreadyMarkedIds(marked);
-          // Pre-check the already-marked members
-          setSelectedUserIds(marked);
+          const statusMap = await userService.getMarkedStatus(ids);
+          setUserStatus(statusMap);
+          setOriginalStatus(statusMap); // Keep a copy of the original state
         } else {
-          setAlreadyMarkedIds([]);
-          setSelectedUserIds([]);
+          setUserStatus({});
+          setOriginalStatus({});
         }
       } catch (error) {
         console.error("Failed to load users:", error);
@@ -60,8 +59,8 @@ export default function AttendancePage() {
           type: "error",
           text: "Something went wrong while fetching users. Please try again.",
         });
-        setAlreadyMarkedIds([]);
-        setSelectedUserIds([]);
+        setUserStatus({});
+        setOriginalStatus({});
       } finally {
         setIsLoadingUsers(false);
       }
@@ -74,64 +73,23 @@ export default function AttendancePage() {
     loadUsersForMobile(mobileNumber, user?.kutumbId);
   };
 
-  // Toggle individual user checkbox.
-  // If the member is already marked (in DB) and is being unchecked → delete the record.
-  // If the member is not yet marked and is being checked → just add to selection.
-  const handleToggleUser = useCallback(
-    async (userId: string) => {
-      const isCurrentlySelected = selectedUserIds.includes(userId);
-      const isAlreadyMarked = alreadyMarkedIds.includes(userId);
-
-      if (isCurrentlySelected && isAlreadyMarked) {
-        // Uncheck an already-DB-saved record → delete it
-        setIsSubmitting(true);
-        try {
-          await userService.removeAttendance([userId]);
-          setAlreadyMarkedIds((prev) => prev.filter((id) => id !== userId));
-          setSelectedUserIds((prev) => prev.filter((id) => id !== userId));
-          setFeedbackMessage({
-            type: "info",
-            text: "Attendance removed for the selected member.",
-          });
-        } catch (error) {
-          console.error("Failed to remove attendance:", error);
-          setFeedbackMessage({
-            type: "error",
-            text:
-              error instanceof Error
-                ? error.message
-                : "Failed to remove attendance. Please try again.",
-          });
-        } finally {
-          setIsSubmitting(false);
-        }
-      } else {
-        // Normal UI-only toggle (no DB call yet — DB write happens on "Present" button)
-        setSelectedUserIds((prev) =>
-          isCurrentlySelected
-            ? prev.filter((id) => id !== userId)
-            : [...prev, userId],
-        );
-      }
+  // Handle status change for an individual user
+  const handleStatusChange = useCallback(
+    (userId: string, status: "Present" | "Absent") => {
+      setUserStatus((prev) => ({
+        ...prev,
+        [userId]: status,
+      }));
     },
-    [selectedUserIds, alreadyMarkedIds],
+    [],
   );
-
-  // Toggle Select All checkbox
-  const handleToggleSelectAll = () => {
-    if (selectedUserIds.length === users.length) {
-      setSelectedUserIds([]);
-    } else {
-      setSelectedUserIds(users.map((u) => u.id));
-    }
-  };
 
   // Counter-only submit — no user searched, just record family/mehman counts
   const handleCounterOnlySubmit = async () => {
     if (familyCount === 0 && mehmanCount === 0) return;
     setIsSubmitting(true);
     try {
-      const members: AttendanceMember[] = [{ familyCount, mehmanCount }];
+      const members: AttendanceMember[] = [{ familyCount, mehmanCount, status: "Present" }];
       const response = await userService.markUsersPresent([], members);
       if (response.success) {
         setFeedbackMessage({
@@ -151,73 +109,42 @@ export default function AttendancePage() {
     }
   };
 
-  // Handle Present Button Click — only submits members NOT already in the DB
+  // Handle Submit Button Click — submits all users with status (Present or Absent)
   const handleMarkPresent = async () => {
-    // Filter out already-marked members — no need to re-insert them
-    const newlySelectedIds = selectedUserIds.filter(
-      (id) => !alreadyMarkedIds.includes(id),
-    );
+    // Find all users with a status (either new or changed)
+    const usersToSubmit = users.filter((u) => userStatus[u.id] !== undefined);
 
-    // The first user shown in the card is the "primary" (searched) person.
-    // If they are already marked, update their mehmanCount instead of inserting.
-    const primaryUser = users[0];
-    const primaryIsAlreadyMarked = primaryUser && alreadyMarkedIds.includes(primaryUser.id);
-
-    if (newlySelectedIds.length === 0) {
-      // If primary is already marked and mehman count is set, just update it
-      if (primaryIsAlreadyMarked && mehmanCount > 0) {
-        setIsSubmitting(true);
-        try {
-          await userService.updateMehmanCount(primaryUser.id, mehmanCount, familyCount);
-          setFeedbackMessage({
-            type: "success",
-            text: `Mehman count updated to ${mehmanCount} for ${primaryUser.name}.`,
-          });
-          // Clear card after successful update
-          setUsers([]);
-          setSelectedUserIds([]);
-          setAlreadyMarkedIds([]);
-          setSelectedMobile("");
-          setMehmanCount(0);
-          setFamilyCount(0);
-        } catch (error) {
-          setFeedbackMessage({
-            type: "error",
-            text: error instanceof Error ? error.message : "Failed to update mehman count.",
-          });
-        } finally {
-          setIsSubmitting(false);
-        }
-        return;
-      }
+    if (usersToSubmit.length === 0) {
       setFeedbackMessage({
         type: "info",
-        text: "All selected members are already marked as present.",
+        text: "Please select attendance status for at least one member.",
       });
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const selectedUsersData = users.filter((u) =>
-        newlySelectedIds.includes(u.id),
-      );
+      // The first user shown in the card is the "primary" (searched) person.
+      const primaryUser = users[0];
+
+      // Assign familyCount and mehmanCount to the primary user if in usersToSubmit,
+      // or to the first submitted user so the counts are never lost.
+      const targetUserForCounters =
+        usersToSubmit.find((u) => u.id === primaryUser?.id) || usersToSubmit[0];
 
       // Build the members payload for POST /api/pre-attendance
-      // The first user in the overall list (users[0]) is the searched person —
-      // attach mehmanCount to their record only.
-      const members: AttendanceMember[] = selectedUsersData.map((u) => ({
+      const members: AttendanceMember[] = usersToSubmit.map((u) => ({
         smkDetailId: u.id,
         SmkId: u.smkNo || u.id,
-        mehmanCount: u.id === primaryUser?.id ? mehmanCount : 0,
-        familyCount: u.id === primaryUser?.id ? familyCount : 0,
+        mehmanCount: u.id === targetUserForCounters?.id ? Number(mehmanCount) || 0 : 0,
+        familyCount: u.id === targetUserForCounters?.id ? Number(familyCount) || 0 : 0,
+        status: userStatus[u.id]!,
       }));
 
-      const response = await userService.markUsersPresent(newlySelectedIds, members);
+      const userIds = usersToSubmit.map((u) => u.id);
+      const response = await userService.markUsersPresent(userIds, members);
 
       if (response.success) {
-        const count = response.count;
-
         setFeedbackMessage({
           type: "success",
           text: `સંખ્યા નોંધાઈ ગઈ છે.`,
@@ -225,14 +152,14 @@ export default function AttendancePage() {
 
         // Clear the card, search input, and counter after successful submission
         setUsers([]);
-        setSelectedUserIds([]);
-        setAlreadyMarkedIds([]);
+        setUserStatus({});
+        setOriginalStatus({});
         setSelectedMobile("");
         setMehmanCount(0);
         setFamilyCount(0);
       }
     } catch (error) {
-      console.error("Error marking present:", error);
+      console.error("Error marking attendance:", error);
       setFeedbackMessage({
         type: "error",
         text:
@@ -383,6 +310,12 @@ export default function AttendancePage() {
             )}
 
           </div>
+
+          {/* Gujarati instruction note */}
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1 leading-relaxed">
+            <span className="font-semibold">નોંધ :-</span> તમારા પરિવાર નું નામ મોબાઈલ નંબર થી ન મળે તો{" "}
+            <span className="font-semibold">Family Count</span> ની સંખ્યા વધારી બટન દબાવી દેવું
+          </p>
         </section>
 
         {/* Feedback Alert Message */}
@@ -457,10 +390,8 @@ export default function AttendancePage() {
             <UserCard
               mobileNumber={selectedMobile}
               users={users}
-              selectedUserIds={selectedUserIds}
-              alreadyMarkedIds={alreadyMarkedIds}
-              onToggleUser={handleToggleUser}
-              onToggleSelectAll={handleToggleSelectAll}
+              userStatus={userStatus}
+              onStatusChange={handleStatusChange}
               onMarkPresent={handleMarkPresent}
               isSubmitting={isSubmitting}
             />
