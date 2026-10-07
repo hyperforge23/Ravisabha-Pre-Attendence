@@ -77,9 +77,8 @@ export async function POST(request: NextRequest) {
     // Handle members with smkDetailId using bulkWrite with upsert
     if (membersWithId.length > 0) {
       const operations = membersWithId.map((m) => {
-        const smkDetailObjectId = m.smkDetailId && mongoose.Types.ObjectId.isValid(m.smkDetailId)
-          ? new mongoose.Types.ObjectId(m.smkDetailId)
-          : m.smkDetailId;
+        // Always cast to ObjectId so TypeScript is satisfied
+        const smkDetailObjectId = new mongoose.Types.ObjectId(m.smkDetailId!);
 
         const mehman = typeof m.mehmanCount === "number" ? m.mehmanCount : Number(m.mehmanCount) || 0;
         const family = typeof m.familyCount === "number" ? m.familyCount : Number(m.familyCount) || 0;
@@ -92,20 +91,26 @@ export async function POST(request: NextRequest) {
             },
             update: {
               $set: {
-                ravisabhaId,
-                smkDetailId: smkDetailObjectId,
                 ...(m.SmkId ? { SmkId: m.SmkId } : {}),
                 mehmanCount: mehman,
                 familyCount: family,
-                status: m.status || "Present",
+                status: (m.status || "Present") as "Present" | "Absent",
+              },
+              // On first insert (upsert), also write the key fields
+              $setOnInsert: {
+                ravisabhaId,
+                smkDetailId: smkDetailObjectId,
               },
             },
-            upsert: true, // Insert if doesn't exist, update if it does
+            upsert: true,
           },
         };
       });
 
-      const result = await PreAttendance.bulkWrite(operations, { ordered: false });
+      const result = await PreAttendance.bulkWrite(
+        operations as Parameters<typeof PreAttendance.bulkWrite>[0],
+        { ordered: false }
+      );
       insertedCount += result.upsertedCount;
       updatedCount += result.modifiedCount;
     }
