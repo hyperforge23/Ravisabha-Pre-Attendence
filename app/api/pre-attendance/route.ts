@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
         SmkId?: string;
         mehmanCount?: number;
         familyCount?: number;
+        status?: "Present" | "Absent";
       }>;
     };
 
@@ -64,61 +65,102 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const ravisabhaId = activeRavisabha._id.toString();
+    const ravisabhaId = activeRavisabha._id;
 
-    const docs = members.map((m) => ({
-      ...(m.smkDetailId ? { smkDetailId: m.smkDetailId } : {}),
-      ...(m.SmkId ? { SmkId: m.SmkId } : {}),
-      ravisabhaId,
-      mehmanCount: m.mehmanCount ?? 0,
-      familyCount: m.familyCount ?? 0,
-    }));
+    // Separate members with smkDetailId (upsert) from counter-only records (always insert)
+    const membersWithId = members.filter(m => m.smkDetailId);
+    const counterOnlyMembers = members.filter(m => !m.smkDetailId);
 
-    console.log("[pre-attendance] inserting docs:", JSON.stringify(docs.map(d => ({ SmkId: d.SmkId, mehmanCount: d.mehmanCount, familyCount: d.familyCount }))));
-
-    // ordered:false — skip duplicates and continue inserting the rest
     let insertedCount = 0;
-    let skippedCount = 0;
+    let updatedCount = 0;
 
-    try {
-      const result = await PreAttendance.insertMany(docs, { ordered: false });
-      insertedCount = result.length;
-    } catch (bulkErr: unknown) {
-      if (
-        bulkErr instanceof Error &&
-        "writeErrors" in bulkErr &&
-        "insertedDocs" in bulkErr
-      ) {
-        const bwErr = bulkErr as {
-          writeErrors: unknown[];
-          insertedDocs: unknown[];
+    // Handle members with smkDetailId using bulkWrite with upsert
+    if (membersWithId.length > 0) {
+      const operations = membersWithId.map((m) => {
+        const smkDetailObjectId = m.smkDetailId && mongoose.Types.ObjectId.isValid(m.smkDetailId)
+          ? new mongoose.Types.ObjectId(m.smkDetailId)
+          : m.smkDetailId;
+
+        const mehman = typeof m.mehmanCount === "number" ? m.mehmanCount : Number(m.mehmanCount) || 0;
+        const family = typeof m.familyCount === "number" ? m.familyCount : Number(m.familyCount) || 0;
+
+        return {
+          updateOne: {
+            filter: {
+              ravisabhaId,
+              smkDetailId: smkDetailObjectId,
+            },
+            update: {
+              $set: {
+                ravisabhaId,
+                smkDetailId: smkDetailObjectId,
+                ...(m.SmkId ? { SmkId: m.SmkId } : {}),
+                mehmanCount: mehman,
+                familyCount: family,
+                status: m.status || "Present",
+              },
+            },
+            upsert: true, // Insert if doesn't exist, update if it does
+          },
         };
-        insertedCount = bwErr.insertedDocs?.length ?? 0;
-        skippedCount = bwErr.writeErrors?.length ?? 0;
-        if (insertedCount === 0) throw bulkErr;
-      } else {
-        throw bulkErr;
+      });
+
+      const result = await PreAttendance.bulkWrite(operations, { ordered: false });
+      insertedCount += result.upsertedCount;
+      updatedCount += result.modifiedCount;
+    }
+
+    // Handle counter-only members (no smkDetailId) - insert each as a new document
+    if (counterOnlyMembers.length > 0) {
+      for (const m of counterOnlyMembers) {
+        try {
+          const doc = new PreAttendance({
+            ravisabhaId,
+            ...(m.SmkId ? { SmkId: m.SmkId } : {}),
+            mehmanCount: typeof m.mehmanCount === "number" ? m.mehmanCount : Number(m.mehmanCount) || 0,
+            familyCount: typeof m.familyCount === "number" ? m.familyCount : Number(m.familyCount) || 0,
+            status: m.status || "Present",
+          });
+          await doc.save();
+          insertedCount += 1;
+          console.log("[pre-attendance] counter-only doc saved:", JSON.stringify({
+            ravisabhaId: ravisabhaId.toString(),
+            mehmanCount: doc.mehmanCount,
+            familyCount: doc.familyCount,
+            status: doc.status,
+            _id: doc._id?.toString(),
+          }));
+        } catch (saveErr) {
+          console.error("[pre-attendance] counter-only save failed:", saveErr);
+          throw saveErr;
+        }
       }
     }
 
-    skippedCount = skippedCount || docs.length - insertedCount;
+    console.log("[pre-attendance] processed:", JSON.stringify({ 
+      withId: membersWithId.length,
+      counterOnly: counterOnlyMembers.length,
+      inserted: insertedCount,
+      updated: updatedCount
+    }));
 
     return NextResponse.json(
       {
         success: true,
         message: "Pre-attendance recorded successfully.",
-        ravisabhaId,
+        ravisabhaId: ravisabhaId.toString(),
         ravisabhaDate: activeRavisabha.date,
-        totalSubmitted: docs.length,
+        totalSubmitted: members.length,
         inserted: insertedCount,
-        skipped: skippedCount,
+        updated: updatedCount,
       },
       { status: 201 }
     );
   } catch (error) {
     console.error("[/api/pre-attendance] POST Error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Internal server error. Please try again.";
     return NextResponse.json(
-      { success: false, error: "Internal server error. Please try again." },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }

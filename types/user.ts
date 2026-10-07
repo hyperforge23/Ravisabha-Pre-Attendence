@@ -19,6 +19,7 @@ export interface User {
   addressDescription?: string;
   familyLeaderNameEng?: string;
   familyLeaderNameGuj?: string;
+  status?: "Present" | "Absent"; // Current attendance status if already marked
 }
 
 export interface UserService {

@@ -6,6 +6,7 @@ export interface AttendanceMember {
   SmkId?: string;        // Human-readable SMK number; omitted for counter-only records
   familyCount?: number;  // Only set on the first (searched) member
   mehmanCount?: number;  // Only set on the first (searched) member
+  status: "Present" | "Absent"; // Attendance status
 }
 
 /**
@@ -13,10 +14,10 @@ export interface AttendanceMember {
  */
 export interface AttendanceService extends UserService {
   /**
-   * Fetch the set of smkDetailIds that are already marked present
-   * for the current active Ravisabha.
+   * Fetch attendance status for the given smkDetailIds for the current active Ravisabha.
+   * Returns a map of smkDetailId -> status ("Present" or "Absent")
    */
-  getMarkedIds(smkDetailIds: string[]): Promise<string[]>;
+  getMarkedStatus(smkDetailIds: string[]): Promise<Record<string, "Present" | "Absent">>;
 
   /**
    * Delete pre-attendance records for the given smkDetailIds.
@@ -68,7 +69,7 @@ class ApiUserService implements AttendanceService {
   }
 
   /**
-   * Bulk-insert pre-attendance for the selected members.
+   * Bulk-insert or update pre-attendance for the selected members.
    */
   async markUsersPresent(
     userIds: string[],
@@ -86,7 +87,7 @@ class ApiUserService implements AttendanceService {
 
     // Read as text first to avoid SyntaxError on HTML error pages
     const text = await res.text();
-    let data: { inserted?: number; error?: string } = {};
+    let data: { inserted?: number; updated?: number; matched?: number; error?: string } = {};
     try {
       data = JSON.parse(text);
     } catch {
@@ -103,16 +104,17 @@ class ApiUserService implements AttendanceService {
 
     return {
       success: true,
-      count: data.inserted ?? members.length,
+      count: (data.inserted ?? 0) + (data.updated ?? 0),
     };
   }
 
   /**
-   * Returns the subset of the provided smkDetailIds that already have a
+   * Returns the attendance status for the provided smkDetailIds that have a
    * pre-attendance record under the current active Ravisabha.
+   * Returns a map of smkDetailId -> status
    */
-  async getMarkedIds(smkDetailIds: string[]): Promise<string[]> {
-    if (smkDetailIds.length === 0) return [];
+  async getMarkedStatus(smkDetailIds: string[]): Promise<Record<string, "Present" | "Absent">> {
+    if (smkDetailIds.length === 0) return {};
 
     const res = await fetch(
       `/api/pre-attendance?smkDetailIds=${encodeURIComponent(smkDetailIds.join(","))}`
@@ -120,14 +122,18 @@ class ApiUserService implements AttendanceService {
 
     if (!res.ok) {
       // If no active ravisabha (404) treat as nobody marked yet
-      if (res.status === 404) return [];
+      if (res.status === 404) return {};
       throw new Error(`Failed to fetch attendance status: ${res.statusText}`);
     }
 
     const data = await res.json();
-    // records is an array of PreAttendance docs; extract their smkDetailId strings
-    const records: Array<{ smkDetailId: string }> = data.records || [];
-    return records.map((r) => r.smkDetailId);
+    // records is an array of PreAttendance docs with smkDetailId and status
+    const records: Array<{ smkDetailId: string; status: "Present" | "Absent" }> = data.records || [];
+    const statusMap: Record<string, "Present" | "Absent"> = {};
+    records.forEach((r) => {
+      statusMap[r.smkDetailId] = r.status;
+    });
+    return statusMap;
   }
 
   /**
@@ -202,8 +208,8 @@ class ApiUserService implements AttendanceService {
  * Mock implementation of AttendanceService for testing/offline use.
  */
 class MockUserService implements AttendanceService {
-  // Track marked IDs in memory for the mock session
-  private markedIds: Set<string> = new Set();
+  // Track marked status in memory for the mock session
+  private markedStatus: Map<string, "Present" | "Absent"> = new Map();
 
   async searchUsers(query: string): Promise<User[]> {
     await new Promise((resolve) => setTimeout(resolve, 80));
@@ -245,13 +251,20 @@ class MockUserService implements AttendanceService {
     userIds: string[]
   ): Promise<{ success: boolean; count: number }> {
     await new Promise((resolve) => setTimeout(resolve, 150));
-    userIds.forEach((id) => this.markedIds.add(id));
+    userIds.forEach((id) => this.markedStatus.set(id, "Present"));
     return { success: true, count: userIds.length };
   }
 
-  async getMarkedIds(smkDetailIds: string[]): Promise<string[]> {
+  async getMarkedStatus(smkDetailIds: string[]): Promise<Record<string, "Present" | "Absent">> {
     await new Promise((resolve) => setTimeout(resolve, 50));
-    return smkDetailIds.filter((id) => this.markedIds.has(id));
+    const result: Record<string, "Present" | "Absent"> = {};
+    smkDetailIds.forEach((id) => {
+      const status = this.markedStatus.get(id);
+      if (status) {
+        result[id] = status;
+      }
+    });
+    return result;
   }
 
   async removeAttendance(
@@ -260,8 +273,8 @@ class MockUserService implements AttendanceService {
     await new Promise((resolve) => setTimeout(resolve, 100));
     let deleted = 0;
     smkDetailIds.forEach((id) => {
-      if (this.markedIds.has(id)) {
-        this.markedIds.delete(id);
+      if (this.markedStatus.has(id)) {
+        this.markedStatus.delete(id);
         deleted++;
       }
     });

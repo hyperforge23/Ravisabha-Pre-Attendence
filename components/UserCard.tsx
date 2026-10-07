@@ -6,11 +6,8 @@ import { User } from "@/types/user";
 interface UserCardProps {
   mobileNumber: string;
   users: User[];
-  selectedUserIds: string[];
-  /** IDs that already have a confirmed DB record for the active Ravisabha */
-  alreadyMarkedIds?: string[];
-  onToggleUser: (userId: string) => void;
-  onToggleSelectAll: () => void;
+  userStatus: Record<string, "Present" | "Absent" | undefined>;
+  onStatusChange: (userId: string, status: "Present" | "Absent") => void;
   onMarkPresent: () => void;
   isSubmitting?: boolean;
 }
@@ -18,14 +15,11 @@ interface UserCardProps {
 export const UserCard: React.FC<UserCardProps> = ({
   mobileNumber,
   users,
-  selectedUserIds,
-  alreadyMarkedIds = [],
-  onToggleUser,
-  onToggleSelectAll,
+  userStatus,
+  onStatusChange,
   onMarkPresent,
   isSubmitting = false,
 }) => {
-  const selectAllRef = useRef<HTMLInputElement>(null);
   const [currentDate, setCurrentDate] = useState<string>("");
   const [currentTime, setCurrentTime] = useState<string>("");
 
@@ -51,21 +45,10 @@ export const UserCard: React.FC<UserCardProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  const allSelected =
-    users.length > 0 && selectedUserIds.length === users.length;
-  const isIndeterminate =
-    selectedUserIds.length > 0 && selectedUserIds.length < users.length;
-
-  useEffect(() => {
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = isIndeterminate;
-    }
-  }, [isIndeterminate]);
-
-  // Members newly selected but not yet saved to DB
-  const newlySelectedCount = selectedUserIds.filter(
-    (id) => !alreadyMarkedIds.includes(id),
-  ).length;
+  // Count how many users have a status (Present or Absent)
+  const markedCount = users.filter((u) => userStatus[u.id] !== undefined).length;
+  // Count how many changes need to be submitted (users with status but not saved yet)
+  const changesCount = users.filter((u) => userStatus[u.id] !== undefined).length;
 
   if (users.length === 0) {
     return (
@@ -84,7 +67,7 @@ export const UserCard: React.FC<UserCardProps> = ({
       role="region"
       aria-label="Member attendance selection"
     >
-      {/* ── Header: member count + date/time + select-all ── */}
+      {/* ── Header: member count + date/time ── */}
       <div className="bg-gray-50 px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
@@ -99,36 +82,17 @@ export const UserCard: React.FC<UserCardProps> = ({
           )}
         </div>
 
-        {/* Select All — larger tap target on mobile */}
-        <label className="flex items-center gap-2 cursor-pointer select-none rounded-md px-1 py-1 focus-within:ring-2 focus-within:ring-green-500 shrink-0">
-          {selectedUserIds.length > 0 && (
-            <span className="text-xs text-gray-400 hidden sm:inline">
-              ({selectedUserIds.length} of {users.length})
-            </span>
-          )}
-          <span className="text-sm font-medium text-gray-700">Select All</span>
-          <input
-            ref={selectAllRef}
-            type="checkbox"
-            checked={allSelected}
-            onChange={onToggleSelectAll}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onToggleSelectAll();
-              }
-            }}
-            aria-label="Select all members for attendance"
-            className="w-5 h-5 text-green-600 bg-white border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-green-500 cursor-pointer outline-none"
-          />
-        </label>
+        {markedCount > 0 && (
+          <span className="text-xs text-gray-400">
+            ({markedCount} marked)
+          </span>
+        )}
       </div>
 
       {/* ── User Rows ── */}
       <div className="divide-y divide-gray-100 bg-white" role="group" aria-label="Members list">
         {users.map((user) => {
-          const isSelected = selectedUserIds.includes(user.id);
-          const isMarked = alreadyMarkedIds.includes(user.id);
+          const currentStatus = userStatus[user.id];
 
           const userGujarati =
             user.gujaratiName ||
@@ -136,17 +100,16 @@ export const UserCard: React.FC<UserCardProps> = ({
               .filter(Boolean)
               .join(" ");
 
-          const rowBg = isMarked
+          const rowBg = currentStatus === "Present"
             ? "bg-green-50"
-            : isSelected
-              ? "bg-green-50/40"
+            : currentStatus === "Absent"
+              ? "bg-red-50"
               : "hover:bg-gray-50 active:bg-gray-100";
 
           return (
             <div
               key={user.id}
-              onClick={() => !isSubmitting && onToggleUser(user.id)}
-              className={`px-4 sm:px-6 py-4 flex items-center justify-between gap-3 cursor-pointer transition ${rowBg} ${
+              className={`px-4 sm:px-6 py-4 flex items-center justify-between gap-3 transition ${rowBg} ${
                 isSubmitting ? "pointer-events-none opacity-60" : ""
               }`}
             >
@@ -159,21 +122,37 @@ export const UserCard: React.FC<UserCardProps> = ({
                       ({userGujarati})
                     </span>
                   )}
-                  {isMarked && (
+                  {currentStatus && (
                     <span
-                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700 border border-green-200"
-                      aria-label="Already marked present"
+                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${
+                        currentStatus === "Present"
+                          ? "bg-green-100 text-green-700 border-green-200"
+                          : "bg-red-100 text-red-700 border-red-200"
+                      }`}
+                      aria-label={`Status: ${currentStatus}`}
                     >
-                      <svg
-                        className="w-2.5 h-2.5 shrink-0"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                      </svg>
-                      Present
+                      {currentStatus === "Present" ? (
+                        <svg
+                          className="w-2.5 h-2.5 shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg
+                          className="w-2.5 h-2.5 shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      )}
+                      {currentStatus}
                     </span>
                   )}
                 </p>
@@ -183,25 +162,35 @@ export const UserCard: React.FC<UserCardProps> = ({
                 </div>
               </div>
 
-              {/* Checkbox — larger tap target */}
-              <div className="shrink-0 flex items-center">
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => !isSubmitting && onToggleUser(user.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      if (!isSubmitting) onToggleUser(user.id);
-                    }
-                  }}
-                  disabled={isSubmitting}
-                  aria-label={`${isMarked ? "Remove attendance for" : "Select"} ${user.name}`}
-                  className={`w-5 h-5 bg-white border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-green-500 cursor-pointer outline-none ${
-                    isMarked ? "text-green-600 border-green-400" : "text-green-600"
-                  }`}
-                />
+              {/* Radio buttons — ના (Absent) and હા (Present) */}
+              <div className="shrink-0 flex items-center gap-3" role="radiogroup" aria-label={`Attendance status for ${user.name}`}>
+                {/* ના = Absent */}
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="radio"
+                    name={`status-${user.id}`}
+                    checked={currentStatus === "Absent"}
+                    onChange={() => !isSubmitting && onStatusChange(user.id, "Absent")}
+                    disabled={isSubmitting}
+                    className="w-4 h-4 text-red-600 bg-white border-gray-300 focus:ring-2 focus:ring-red-500 cursor-pointer"
+                    aria-label={`Mark ${user.name} as absent`}
+                  />
+                  <span className="text-sm font-medium text-gray-700">ના</span>
+                </label>
+
+                {/* હા = Present */}
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="radio"
+                    name={`status-${user.id}`}
+                    checked={currentStatus === "Present"}
+                    onChange={() => !isSubmitting && onStatusChange(user.id, "Present")}
+                    disabled={isSubmitting}
+                    className="w-4 h-4 text-green-600 bg-white border-gray-300 focus:ring-2 focus:ring-green-500 cursor-pointer"
+                    aria-label={`Mark ${user.name} as present`}
+                  />
+                  <span className="text-sm font-medium text-gray-700">હા</span>
+                </label>
               </div>
             </div>
           );
@@ -210,38 +199,37 @@ export const UserCard: React.FC<UserCardProps> = ({
 
       {/* ── Footer ── */}
       <div className="px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        {/* Already-marked summary */}
-        {alreadyMarkedIds.length > 0 && (
-          <p className="text-xs text-green-700 font-medium order-2 sm:order-1">
-            {alreadyMarkedIds.length}{" "}
-            {alreadyMarkedIds.length === 1 ? "member" : "members"} already present
+        {/* Status summary */}
+        {markedCount > 0 && (
+          <p className="text-xs text-gray-600 font-medium order-2 sm:order-1">
+            {markedCount} {markedCount === 1 ? "member" : "members"} marked
           </p>
         )}
 
-        {/* Present button — full width on mobile */}
+        {/* Submit button — full width on mobile */}
         <div className="order-1 sm:order-2 sm:ml-auto w-full sm:w-auto">
           <button
             type="button"
-            disabled={newlySelectedCount === 0 || isSubmitting}
-            aria-disabled={newlySelectedCount === 0 || isSubmitting}
+            disabled={changesCount === 0 || isSubmitting}
+            aria-disabled={changesCount === 0 || isSubmitting}
             onClick={onMarkPresent}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                if (newlySelectedCount > 0 && !isSubmitting) onMarkPresent();
+                if (changesCount > 0 && !isSubmitting) onMarkPresent();
               }
             }}
             className={`w-full sm:w-auto px-8 py-3 sm:py-2.5 rounded-md text-sm font-semibold text-white transition shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-600 ${
-              newlySelectedCount === 0 || isSubmitting
+              changesCount === 0 || isSubmitting
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-[#28a745] hover:bg-[#218838] active:bg-[#1e7e34] cursor-pointer"
             }`}
           >
             {isSubmitting
               ? "Saving..."
-              : newlySelectedCount > 0
-                ? `Present (${newlySelectedCount})`
-                : "Present"}
+              : changesCount > 0
+                ? `Submit (${changesCount})`
+                : "Submit"}
           </button>
         </div>
       </div>
