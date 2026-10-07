@@ -36,11 +36,10 @@ export async function POST(request: NextRequest) {
 
     const { members } = body as {
       members?: Array<{
-        smkDetailId: string;
-        userId: string;
-        SmkId: string;
-        name: string;
+        smkDetailId?: string;
+        SmkId?: string;
         mehmanCount?: number;
+        familyCount?: number;
       }>;
     };
 
@@ -49,19 +48,6 @@ export async function POST(request: NextRequest) {
         { success: false, error: "Request body must include a non-empty `members` array." },
         { status: 400 }
       );
-    }
-
-    for (let i = 0; i < members.length; i++) {
-      const m = members[i];
-      if (!m.smkDetailId || !m.SmkId || !m.name) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Member at index ${i} is missing one or more required fields: smkDetailId, SmkId, name.`,
-          },
-          { status: 400 }
-        );
-      }
     }
 
     await connectDb();
@@ -79,20 +65,16 @@ export async function POST(request: NextRequest) {
     }
 
     const ravisabhaId = activeRavisabha._id.toString();
-    const now = new Date();
 
     const docs = members.map((m) => ({
-      smkDetailId: m.smkDetailId,
-      userId: m.userId,
+      ...(m.smkDetailId ? { smkDetailId: m.smkDetailId } : {}),
+      ...(m.SmkId ? { SmkId: m.SmkId } : {}),
       ravisabhaId,
-      SmkId: m.SmkId,
-      name: m.name,
-      status: "present" as const,
-      date: now,
       mehmanCount: m.mehmanCount ?? 0,
+      familyCount: m.familyCount ?? 0,
     }));
 
-    console.log("[pre-attendance] inserting docs:", JSON.stringify(docs.map(d => ({ SmkId: d.SmkId, mehmanCount: d.mehmanCount }))));
+    console.log("[pre-attendance] inserting docs:", JSON.stringify(docs.map(d => ({ SmkId: d.SmkId, mehmanCount: d.mehmanCount, familyCount: d.familyCount }))));
 
     // ordered:false — skip duplicates and continue inserting the rest
     let insertedCount = 0;
@@ -246,13 +228,14 @@ export async function GET(request: NextRequest) {
 /**
  * PATCH /api/pre-attendance
  *
- * Updates the mehmanCount on an existing pre-attendance record for the active Ravisabha.
- * Used when the first (searched) member is already marked present and the mehman counter changes.
+ * Updates the mehmanCount and/or familyCount on an existing pre-attendance record.
+ * Used when the first (searched) member is already marked present and the counters change.
  *
  * Body:
  * {
  *   smkDetailId: string,
- *   mehmanCount: number
+ *   mehmanCount: number,
+ *   familyCount: number
  * }
  */
 export async function PATCH(request: NextRequest) {
@@ -267,9 +250,10 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { smkDetailId, mehmanCount } = body as {
+    const { smkDetailId, mehmanCount, familyCount } = body as {
       smkDetailId?: string;
       mehmanCount?: number;
+      familyCount?: number;
     };
 
     if (!smkDetailId) {
@@ -282,6 +266,13 @@ export async function PATCH(request: NextRequest) {
     if (typeof mehmanCount !== "number" || mehmanCount < 0) {
       return NextResponse.json(
         { success: false, error: "mehmanCount must be a non-negative number." },
+        { status: 400 }
+      );
+    }
+
+    if (typeof familyCount !== "number" || familyCount < 0) {
+      return NextResponse.json(
+        { success: false, error: "familyCount must be a non-negative number." },
         { status: 400 }
       );
     }
@@ -303,7 +294,7 @@ export async function PATCH(request: NextRequest) {
 
     const updated = await PreAttendance.findOneAndUpdate(
       { ravisabhaId, smkDetailId },
-      { $set: { mehmanCount } },
+      { $set: { mehmanCount, familyCount } },
       { new: true }
     );
 

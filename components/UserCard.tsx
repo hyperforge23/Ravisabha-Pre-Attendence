@@ -84,13 +84,12 @@ export const UserCard: React.FC<UserCardProps> = ({
       role="region"
       aria-label="Member attendance selection"
     >
-      {/* ── Header: date/time + member count + select-all ── */}
-      <div className="bg-gray-50 px-5 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-3 min-w-0">
+      {/* ── Header: member count + date/time + select-all ── */}
+      <div className="bg-gray-50 px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
             Members ({users.length})
           </span>
-          {/* Date / time pill */}
           {currentDate && (
             <span className="hidden sm:inline-flex items-center gap-1 text-xs text-gray-400 font-mono">
               <span>{currentDate}</span>
@@ -100,9 +99,10 @@ export const UserCard: React.FC<UserCardProps> = ({
           )}
         </div>
 
-        <label className="flex items-center space-x-2 cursor-pointer select-none rounded-md px-1 py-0.5 focus-within:ring-2 focus-within:ring-green-500 shrink-0">
+        {/* Select All — larger tap target on mobile */}
+        <label className="flex items-center gap-2 cursor-pointer select-none rounded-md px-1 py-1 focus-within:ring-2 focus-within:ring-green-500 shrink-0">
           {selectedUserIds.length > 0 && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-400 hidden sm:inline">
               ({selectedUserIds.length} of {users.length})
             </span>
           )}
@@ -119,7 +119,7 @@ export const UserCard: React.FC<UserCardProps> = ({
               }
             }}
             aria-label="Select all members for attendance"
-            className="w-4 h-4 text-green-600 bg-white border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-green-500 cursor-pointer outline-none"
+            className="w-5 h-5 text-green-600 bg-white border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-green-500 cursor-pointer outline-none"
           />
         </label>
       </div>
@@ -136,61 +136,55 @@ export const UserCard: React.FC<UserCardProps> = ({
               .filter(Boolean)
               .join(" ");
 
-          // Row background: green tint if already in DB, lighter tint if newly selected
           const rowBg = isMarked
             ? "bg-green-50"
             : isSelected
               ? "bg-green-50/40"
-              : "hover:bg-gray-50";
+              : "hover:bg-gray-50 active:bg-gray-100";
 
           return (
             <div
               key={user.id}
               onClick={() => !isSubmitting && onToggleUser(user.id)}
-              className={`px-5 sm:px-6 py-3.5 flex items-center justify-between cursor-pointer transition ${rowBg} ${
+              className={`px-4 sm:px-6 py-4 flex items-center justify-between gap-3 cursor-pointer transition ${rowBg} ${
                 isSubmitting ? "pointer-events-none opacity-60" : ""
               }`}
             >
-              <div className="space-y-0.5 min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-900 flex items-baseline gap-1.5 flex-wrap">
-                  <span>{user.name}</span>
+              {/* Text content */}
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-sm font-medium text-gray-900 flex items-center gap-1.5 flex-wrap leading-snug">
+                  <span className="break-words">{user.name}</span>
                   {userGujarati && (
                     <span className="text-gray-500 text-xs font-normal">
                       ({userGujarati})
                     </span>
                   )}
-                  {/* "Already Present" badge — shown only for DB-confirmed records */}
                   {isMarked && (
                     <span
                       className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700 border border-green-200"
                       aria-label="Already marked present"
                     >
-                      {/* checkmark icon */}
                       <svg
-                        className="w-2.5 h-2.5"
+                        className="w-2.5 h-2.5 shrink-0"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
                         aria-hidden="true"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth="3"
-                          d="M5 13l4 4L19 7"
-                        />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
                       </svg>
                       Present
                     </span>
                   )}
                 </p>
-                <div className="flex items-center gap-3 text-xs text-gray-500 font-mono">
-                  {user.smkNo && <span>SMK No : {user.smkNo}</span>}
+                <div className="flex items-center gap-2 sm:gap-3 text-xs text-gray-500 font-mono flex-wrap">
+                  {user.smkNo && <span>SMK: {user.smkNo}</span>}
                   <span>{user.mobileNo || user.mobileNumber}</span>
                 </div>
               </div>
 
-              <div className="flex items-center pl-4 shrink-0">
+              {/* Checkbox — larger tap target */}
+              <div className="shrink-0 flex items-center">
                 <input
                   type="checkbox"
                   checked={isSelected}
@@ -204,10 +198,8 @@ export const UserCard: React.FC<UserCardProps> = ({
                   }}
                   disabled={isSubmitting}
                   aria-label={`${isMarked ? "Remove attendance for" : "Select"} ${user.name}`}
-                  className={`w-4 h-4 bg-white border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-green-500 cursor-pointer outline-none ${
-                    isMarked
-                      ? "text-green-600 border-green-400"
-                      : "text-green-600"
+                  className={`w-5 h-5 bg-white border-gray-300 rounded focus-visible:ring-2 focus-visible:ring-green-500 cursor-pointer outline-none ${
+                    isMarked ? "text-green-600 border-green-400" : "text-green-600"
                   }`}
                 />
               </div>
@@ -217,16 +209,17 @@ export const UserCard: React.FC<UserCardProps> = ({
       </div>
 
       {/* ── Footer ── */}
-      <div className="px-5 sm:px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-3 flex-wrap">
-        {/* Summary of already-marked count */}
+      <div className="px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        {/* Already-marked summary */}
         {alreadyMarkedIds.length > 0 && (
-          <p className="text-xs text-green-700 font-medium">
+          <p className="text-xs text-green-700 font-medium order-2 sm:order-1">
             {alreadyMarkedIds.length}{" "}
             {alreadyMarkedIds.length === 1 ? "member" : "members"} already present
           </p>
         )}
 
-        <div className="ml-auto">
+        {/* Present button — full width on mobile */}
+        <div className="order-1 sm:order-2 sm:ml-auto w-full sm:w-auto">
           <button
             type="button"
             disabled={newlySelectedCount === 0 || isSubmitting}
@@ -235,12 +228,10 @@ export const UserCard: React.FC<UserCardProps> = ({
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                if (newlySelectedCount > 0 && !isSubmitting) {
-                  onMarkPresent();
-                }
+                if (newlySelectedCount > 0 && !isSubmitting) onMarkPresent();
               }
             }}
-            className={`w-full sm:w-auto px-8 py-2.5 rounded-md text-sm font-semibold text-white transition shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-600 ${
+            className={`w-full sm:w-auto px-8 py-3 sm:py-2.5 rounded-md text-sm font-semibold text-white transition shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-600 ${
               newlySelectedCount === 0 || isSubmitting
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-[#28a745] hover:bg-[#218838] active:bg-[#1e7e34] cursor-pointer"
