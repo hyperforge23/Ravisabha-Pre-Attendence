@@ -7,8 +7,8 @@ import { User } from "@/types/user";
 import { userService, AttendanceMember } from "@/services/userService";
 
 export default function AttendancePage() {
-  // Screen mode: "search" (Screen 1) | "card" (Screen 2)
-  const [currentScreen, setCurrentScreen] = useState<"search" | "card">(
+  // Screen mode: "search" (Screen 1) | "card" (Screen 2) | "thankyou" (Screen 3)
+  const [currentScreen, setCurrentScreen] = useState<"search" | "card" | "thankyou">(
     "search",
   );
   const [mobileInput, setMobileInput] = useState<string>("");
@@ -50,6 +50,8 @@ export default function AttendancePage() {
         setUsers([]);
         setUserStatus({});
         setOriginalStatus({});
+        setFamilyCount(0);
+        setMehmanCount(0);
         return;
       }
 
@@ -63,15 +65,20 @@ export default function AttendancePage() {
         );
         setUsers(results);
 
-        // Fetch current attendance status for these users
+        // Fetch current attendance status and existing family/mehman counts for these users
         if (results.length > 0) {
           const ids = results.map((u) => u.id);
-          const statusMap = await userService.getMarkedStatus(ids);
+          const { statusMap, familyCount: existingFamily, mehmanCount: existingMehman } =
+            await userService.getMarkedDetails(ids);
           setUserStatus(statusMap);
           setOriginalStatus(statusMap);
+          setFamilyCount(existingFamily);
+          setMehmanCount(existingMehman);
         } else {
           setUserStatus({});
           setOriginalStatus({});
+          setFamilyCount(0);
+          setMehmanCount(0);
         }
       } catch (error) {
         console.error("Failed to load users:", error);
@@ -81,6 +88,8 @@ export default function AttendancePage() {
         });
         setUserStatus({});
         setOriginalStatus({});
+        setFamilyCount(0);
+        setMehmanCount(0);
       } finally {
         setIsLoadingUsers(false);
       }
@@ -108,15 +117,21 @@ export default function AttendancePage() {
     loadUsersForMobile(mobileInput);
   };
 
-  // Navigate back to Screen 1 (Search Screen)
-  const handleBackToSearch = () => {
+  // Navigate back to Screen 1 (Search Screen / Home)
+  const handleGoToHome = () => {
     setCurrentScreen("search");
     setUsers([]);
     setUserStatus({});
     setOriginalStatus({});
+    setSelectedMobile("");
+    setMobileInput("");
     setMehmanCount(0);
     setFamilyCount(0);
     setFeedbackMessage(null);
+  };
+
+  const handleBackToSearch = () => {
+    handleGoToHome();
   };
 
   // Handle status change for an individual user
@@ -140,12 +155,12 @@ export default function AttendancePage() {
       ];
       const response = await userService.markUsersPresent([], members);
       if (response.success) {
-        setFeedbackMessage({
-          type: "success",
-          text: `સંખ્યા નોંધાઈ ગઈ છે.${familyCount > 0 ? ` Family: ${familyCount}.` : ""}${mehmanCount > 0 ? ` Mehman: ${mehmanCount}.` : ""}`,
-        });
         setFamilyCount(0);
         setMehmanCount(0);
+        setSelectedMobile("");
+        setMobileInput("");
+        setFeedbackMessage(null);
+        setCurrentScreen("thankyou");
       }
     } catch (error) {
       setFeedbackMessage({
@@ -198,12 +213,7 @@ export default function AttendancePage() {
       const response = await userService.markUsersPresent(userIds, members);
 
       if (response.success) {
-        setFeedbackMessage({
-          type: "success",
-          text: `સંખ્યા નોંધાઈ ગઈ છે.`,
-        });
-
-        // Reset and go back to Screen 1 for the next attendee
+        // Reset and navigate to Thank You screen
         setUsers([]);
         setUserStatus({});
         setOriginalStatus({});
@@ -211,7 +221,8 @@ export default function AttendancePage() {
         setMobileInput("");
         setMehmanCount(0);
         setFamilyCount(0);
-        setCurrentScreen("search");
+        setFeedbackMessage(null);
+        setCurrentScreen("thankyou");
       }
     } catch (error) {
       console.error("Error marking attendance:", error);
@@ -479,198 +490,197 @@ export default function AttendancePage() {
               </div>
             )}
 
-            {/* Case A: Number NOT found in database -> Show Counters + Note + Present Button */}
-            {!isLoadingUsers && users.length === 0 && (
-              <div className="space-y-4">
-                {/* Not Found Banner */}
-                <div className="w-full bg-white border border-amber-200 rounded-xl p-5 text-center shadow-2xs">
-                  <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 text-amber-700 mb-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    No members found for mobile number <span className="font-mono text-gray-900 font-bold">{selectedMobile}</span>
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    મોબાઈલ નંબર ડેટાબેઝ માં મળ્યો નથી. કૃપા કરીને નીચે Family Count વધારીને સંખ્યા નોંધો.
-                  </p>
-                </div>
-
-                {/* Counters Section for Non-registered family */}
-                <section
-                  aria-label="Family Counters"
-                  className="w-full bg-white border border-gray-200 rounded-xl p-4 sm:p-5 shadow-2xs space-y-4"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex flex-wrap items-center gap-4">
-                      {/* Family Count */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                          Family Count:
+            {/* Counters Section: ALWAYS VISIBLE (Family Count + Mehman Count) */}
+            {!isLoadingUsers && (
+              <section
+                aria-label="Family and Mehman Counters"
+                className="w-full bg-white border border-gray-200 rounded-xl p-3.5 sm:p-4 shadow-2xs space-y-3"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+                    {/* Non SMK Family Count */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                        Non SMK Family Count:
+                      </span>
+                      <div className="flex items-center justify-between h-9 px-2 bg-gray-50 border border-gray-200 rounded-lg">
+                        <button
+                          type="button"
+                          disabled={familyCount <= 0}
+                          onClick={() =>
+                            setFamilyCount((prev) => Math.max(0, prev - 1))
+                          }
+                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${
+                            familyCount <= 0
+                              ? "text-gray-300 cursor-not-allowed"
+                              : "text-blue-600 hover:bg-blue-50 cursor-pointer"
+                          }`}
+                        >
+                          −
+                        </button>
+                        <span className="w-8 text-center text-sm font-semibold font-mono text-gray-800">
+                          {familyCount}
                         </span>
-                        <div className="flex items-center justify-between h-10 px-2 bg-gray-50 border border-gray-200 rounded-lg">
-                          <button
-                            type="button"
-                            disabled={familyCount <= 0}
-                            onClick={() =>
-                              setFamilyCount((prev) => Math.max(0, prev - 1))
-                            }
-                            className={`w-8 h-8 flex items-center justify-center text-lg font-bold rounded ${
-                              familyCount <= 0
-                                ? "text-gray-300 cursor-not-allowed"
-                                : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                            }`}
-                          >
-                            −
-                          </button>
-                          <span className="w-8 text-center text-sm font-semibold font-mono text-gray-800">
-                            {familyCount}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={familyCount >= 10}
-                            onClick={() =>
-                              setFamilyCount((prev) => Math.min(10, prev + 1))
-                            }
-                            className={`w-8 h-8 flex items-center justify-center text-lg font-bold rounded ${
-                              familyCount >= 10
-                                ? "text-gray-300 cursor-not-allowed"
-                                : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                            }`}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Mehman Count */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                          Mehman Count:
-                        </span>
-                        <div className="flex items-center justify-between h-10 px-2 bg-gray-50 border border-gray-200 rounded-lg">
-                          <button
-                            type="button"
-                            disabled={mehmanCount <= 0}
-                            onClick={() =>
-                              setMehmanCount((prev) => Math.max(0, prev - 1))
-                            }
-                            className={`w-8 h-8 flex items-center justify-center text-lg font-bold rounded ${
-                              mehmanCount <= 0
-                                ? "text-gray-300 cursor-not-allowed"
-                                : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                            }`}
-                          >
-                            −
-                          </button>
-                          <span className="w-8 text-center text-sm font-semibold font-mono text-gray-800">
-                            {mehmanCount}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={mehmanCount >= 10}
-                            onClick={() =>
-                              setMehmanCount((prev) => Math.min(10, prev + 1))
-                            }
-                            className={`w-8 h-8 flex items-center justify-center text-lg font-bold rounded ${
-                              mehmanCount >= 10
-                                ? "text-gray-300 cursor-not-allowed"
-                                : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                            }`}
-                          >
-                            +
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          disabled={familyCount >= 10}
+                          onClick={() =>
+                            setFamilyCount((prev) => Math.min(10, prev + 1))
+                          }
+                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${
+                            familyCount >= 10
+                              ? "text-gray-300 cursor-not-allowed"
+                              : "text-blue-600 hover:bg-blue-50 cursor-pointer"
+                          }`}
+                        >
+                          +
+                        </button>
                       </div>
                     </div>
 
-                    {/* Direct Submit Button */}
-                    {(familyCount > 0 || mehmanCount > 0) && (
-                      <button
-                        type="button"
-                        disabled={isSubmitting}
-                        onClick={handleCounterOnlySubmit}
-                        className={`w-full sm:w-auto px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition shadow-xs cursor-pointer ${
-                          isSubmitting
-                            ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                            : "bg-[#28a745] hover:bg-[#218838] active:bg-[#1e7e34]"
-                        }`}
-                      >
-                        {isSubmitting ? "Saving..." : "Present (સંખ્યા નોંધો)"}
-                      </button>
-                    )}
+                    {/* Mehman Count */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                        Mehman Count:
+                      </span>
+                      <div className="flex items-center justify-between h-9 px-2 bg-gray-50 border border-gray-200 rounded-lg">
+                        <button
+                          type="button"
+                          disabled={mehmanCount <= 0}
+                          onClick={() =>
+                            setMehmanCount((prev) => Math.max(0, prev - 1))
+                          }
+                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${
+                            mehmanCount <= 0
+                              ? "text-gray-300 cursor-not-allowed"
+                              : "text-blue-600 hover:bg-blue-50 cursor-pointer"
+                          }`}
+                        >
+                          −
+                        </button>
+                        <span className="w-8 text-center text-sm font-semibold font-mono text-gray-800">
+                          {mehmanCount}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={mehmanCount >= 10}
+                          onClick={() =>
+                            setMehmanCount((prev) => Math.min(10, prev + 1))
+                          }
+                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${
+                            mehmanCount >= 10
+                              ? "text-gray-300 cursor-not-allowed"
+                              : "text-blue-600 hover:bg-blue-50 cursor-pointer"
+                          }`}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Gujarati instruction note */}
+                  {/* Direct submit if users list is empty */}
+                  {users.length === 0 && (familyCount > 0 || mehmanCount > 0) && (
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={handleCounterOnlySubmit}
+                      className={`w-full sm:w-auto px-6 py-2 rounded-lg text-sm font-semibold text-white transition shadow-xs cursor-pointer ${
+                        isSubmitting
+                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                          : "bg-[#28a745] hover:bg-[#218838] active:bg-[#1e7e34]"
+                      }`}
+                    >
+                      {isSubmitting ? "Saving..." : "Present (સંખ્યા નોંધો)"}
+                    </button>
+                  )}
+                </div>
+
+                {/* Gujarati instruction note when no users are in DB */}
+                {users.length === 0 && (
                   <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
                     <span className="font-semibold">નોંધ :-</span> તમારા પરિવાર નું નામ મોબાઈલ નંબર થી ન મળે તો{" "}
-                    <span className="font-semibold">Family Count</span> ની સંખ્યા વધારી બટન દબાવી દેવું
+                    <span className="font-semibold">Non SMK Family Count</span> ની સંખ્યા વધારી બટન દબાવી દેવું
                   </p>
-                </section>
-              </div>
+                )}
+              </section>
             )}
 
-            {/* Case B: User(s) FOUND in database -> Show Mehman Counter + UserCard */}
-            {!isLoadingUsers && users.length > 0 && (
-              <div className="space-y-4">
-                {/* Mehman Count Bar */}
-                <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                      Mehman Count:
-                    </span>
-                    <div className="flex items-center justify-between h-9 px-2 bg-gray-50 border border-gray-200 rounded-lg">
-                      <button
-                        type="button"
-                        disabled={mehmanCount <= 0}
-                        onClick={() =>
-                          setMehmanCount((prev) => Math.max(0, prev - 1))
-                        }
-                        className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${
-                          mehmanCount <= 0
-                            ? "text-gray-300 cursor-not-allowed"
-                            : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                        }`}
-                      >
-                        −
-                      </button>
-                      <span className="w-8 text-center text-sm font-semibold font-mono text-gray-800">
-                        {mehmanCount}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={mehmanCount >= 10}
-                        onClick={() =>
-                          setMehmanCount((prev) => Math.min(10, prev + 1))
-                        }
-                        className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${
-                          mehmanCount >= 10
-                            ? "text-gray-300 cursor-not-allowed"
-                            : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                        }`}
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
+            {/* Case A: Number NOT found in database -> Show Notice */}
+            {!isLoadingUsers && users.length === 0 && (
+              <div className="w-full bg-white border border-amber-200 rounded-xl p-5 text-center shadow-2xs">
+                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 text-amber-700 mb-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
                 </div>
-
-                <section aria-labelledby="user-card-title">
-                  <h2 id="user-card-title" className="sr-only">
-                    User Attendance Selection
-                  </h2>
-                  <UserCard
-                    mobileNumber={selectedMobile}
-                    users={users}
-                    userStatus={userStatus}
-                    onStatusChange={handleStatusChange}
-                    onMarkPresent={handleMarkPresent}
-                    isSubmitting={isSubmitting}
-                  />
-                </section>
+                <p className="text-sm font-semibold text-gray-900">
+                  No members found for mobile number <span className="font-mono text-gray-900 font-bold">{selectedMobile}</span>
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  મોબાઈલ નંબર ડેટાબેઝ માં મળ્યો નથી. કૃપા કરીને ઉપર Non SMK Family Count વધારીને સંખ્યા નોંધો.
+                </p>
               </div>
             )}
+
+            {/* Case B: User(s) FOUND in database -> Show UserCard */}
+            {!isLoadingUsers && users.length > 0 && (
+              <section aria-labelledby="user-card-title">
+                <h2 id="user-card-title" className="sr-only">
+                  User Attendance Selection
+                </h2>
+                <UserCard
+                  mobileNumber={selectedMobile}
+                  users={users}
+                  userStatus={userStatus}
+                  onStatusChange={handleStatusChange}
+                  onMarkPresent={handleMarkPresent}
+                  isSubmitting={isSubmitting}
+                />
+              </section>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            SCREEN 3: Thank You Screen
+           ═══════════════════════════════════════════════════════════════════ */}
+        {currentScreen === "thankyou" && (
+          <div className="flex-1 flex flex-col items-center justify-center py-8 sm:py-16">
+            <div className="w-full max-w-md bg-white border border-gray-200 rounded-2xl p-6 sm:p-10 shadow-sm text-center space-y-6 animate-in fade-in zoom-in-95 duration-200">
+              {/* Green Success Icon */}
+              <div className="mx-auto w-16 h-16 sm:w-20 sm:h-20 bg-green-100 rounded-full flex items-center justify-center text-green-600 shadow-xs">
+                <svg className="w-8 h-8 sm:w-10 sm:h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+
+              {/* Thank you and message text */}
+              <div className="space-y-2">
+                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
+                  Thank You!
+                </h2>
+                <p className="text-lg sm:text-xl font-semibold text-green-700">
+                  સંખ્યા નોંધાઈ ગઈ છે
+                </p>
+                <p className="text-xs sm:text-sm text-gray-500">
+                  હાજરી સફળતાપૂર્વક નોંધાઈ ગઈ છે.
+                </p>
+              </div>
+
+              {/* Home / Search Button */}
+              <button
+                type="button"
+                onClick={handleGoToHome}
+                className="w-full py-3.5 px-6 rounded-xl font-semibold text-base bg-black hover:bg-neutral-800 active:scale-[0.99] text-white cursor-pointer shadow-md transition-all flex items-center justify-center gap-2"
+                aria-label="Go to Home / Search page"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                Home (નવો નંબર શોધો)
+              </button>
+            </div>
           </div>
         )}
       </main>
