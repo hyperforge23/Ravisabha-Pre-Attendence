@@ -9,7 +9,7 @@ export const Header: React.FC = () => {
             R
           </div>
           <h1 className="text-base sm:text-xl lg:text-2xl font-semibold text-gray-900 tracking-tight truncate">
-            Ravi Sabha Attendance
+            રવિ સભા હાજરી પત્રક
           </h1>
         </div>
       </div>
