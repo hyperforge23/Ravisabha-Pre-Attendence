@@ -252,13 +252,12 @@ export default function AttendancePage() {
           <div
             role="status"
             aria-live="polite"
-            className={`w-full max-w-3xl mx-auto mb-4 p-3 sm:p-4 rounded-xl border text-sm flex items-center justify-between gap-2 shadow-xs transition-all ${
-              feedbackMessage.type === "success"
-                ? "bg-green-50 border-green-200 text-green-800"
-                : feedbackMessage.type === "error"
-                  ? "bg-red-50 border-red-200 text-red-800"
-                  : "bg-blue-50 border-blue-200 text-blue-800"
-            }`}
+            className={`w-full max-w-3xl mx-auto mb-4 p-3 sm:p-4 rounded-xl border text-sm flex items-center justify-between gap-2 shadow-xs transition-all ${feedbackMessage.type === "success"
+              ? "bg-green-50 border-green-200 text-green-800"
+              : feedbackMessage.type === "error"
+                ? "bg-red-50 border-red-200 text-red-800"
+                : "bg-blue-50 border-blue-200 text-blue-800"
+              }`}
           >
             {/* Icon + text */}
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -416,11 +415,10 @@ export default function AttendancePage() {
                 <button
                   type="submit"
                   disabled={isSearchDisabled}
-                  className={`w-full py-3.5 px-6 rounded-xl font-semibold text-base transition-all duration-200 flex items-center justify-center gap-2 shadow-xs select-none ${
-                    isSearchDisabled
-                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                      : "bg-black hover:bg-neutral-800 active:scale-[0.99] text-white cursor-pointer shadow-md"
-                  }`}
+                  className={`w-full py-3.5 px-6 rounded-xl font-semibold text-base transition-all duration-200 flex items-center justify-center gap-2 shadow-xs select-none ${isSearchDisabled
+                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                    : "bg-black hover:bg-neutral-800 active:scale-[0.99] text-white cursor-pointer shadow-md"
+                    }`}
                   aria-label="Search mobile number"
                 >
                   <svg
@@ -490,8 +488,8 @@ export default function AttendancePage() {
               </div>
             )}
 
-            {/* Counters Section: ALWAYS VISIBLE (Family Count + Mehman Count) */}
-            {!isLoadingUsers && (
+            {/* Counters Section: only show when users ARE found */}
+            {!isLoadingUsers && users.length > 0 && (
               <section
                 aria-label="Family and Mehman Counters"
                 className="w-full bg-white border border-gray-200 rounded-xl p-3.5 sm:p-4 shadow-2xs space-y-3"
@@ -510,11 +508,10 @@ export default function AttendancePage() {
                           onClick={() =>
                             setFamilyCount((prev) => Math.max(0, prev - 1))
                           }
-                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${
-                            familyCount <= 0
-                              ? "text-gray-300 cursor-not-allowed"
-                              : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                          }`}
+                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${familyCount <= 0
+                            ? "text-gray-300 cursor-not-allowed"
+                            : "text-blue-600 hover:bg-blue-50 cursor-pointer"
+                            }`}
                         >
                           −
                         </button>
@@ -527,11 +524,10 @@ export default function AttendancePage() {
                           onClick={() =>
                             setFamilyCount((prev) => Math.min(10, prev + 1))
                           }
-                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${
-                            familyCount >= 10
-                              ? "text-gray-300 cursor-not-allowed"
-                              : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                          }`}
+                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${familyCount >= 10
+                            ? "text-gray-300 cursor-not-allowed"
+                            : "text-blue-600 hover:bg-blue-50 cursor-pointer"
+                            }`}
                         >
                           +
                         </button>
@@ -550,11 +546,10 @@ export default function AttendancePage() {
                           onClick={() =>
                             setMehmanCount((prev) => Math.max(0, prev - 1))
                           }
-                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${
-                            mehmanCount <= 0
-                              ? "text-gray-300 cursor-not-allowed"
-                              : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                          }`}
+                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${mehmanCount <= 0
+                            ? "text-gray-300 cursor-not-allowed"
+                            : "text-blue-600 hover:bg-blue-50 cursor-pointer"
+                            }`}
                         >
                           −
                         </button>
@@ -567,59 +562,32 @@ export default function AttendancePage() {
                           onClick={() =>
                             setMehmanCount((prev) => Math.min(10, prev + 1))
                           }
-                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${
-                            mehmanCount >= 10
-                              ? "text-gray-300 cursor-not-allowed"
-                              : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                          }`}
+                          className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${mehmanCount >= 10
+                            ? "text-gray-300 cursor-not-allowed"
+                            : "text-blue-600 hover:bg-blue-50 cursor-pointer"
+                            }`}
                         >
                           +
                         </button>
                       </div>
                     </div>
                   </div>
-
-                  {/* Direct submit if users list is empty */}
-                  {users.length === 0 && (familyCount > 0 || mehmanCount > 0) && (
-                    <button
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={handleCounterOnlySubmit}
-                      className={`w-full sm:w-auto px-6 py-2 rounded-lg text-sm font-semibold text-white transition shadow-xs cursor-pointer ${
-                        isSubmitting
-                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                          : "bg-[#28a745] hover:bg-[#218838] active:bg-[#1e7e34]"
-                      }`}
-                    >
-                      {isSubmitting ? "Saving..." : "Present (સંખ્યા નોંધો)"}
-                    </button>
-                  )}
                 </div>
-
-                {/* Gujarati instruction note when no users are in DB */}
-                {users.length === 0 && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
-                    <span className="font-semibold">નોંધ :-</span> તમારા પરિવાર નું નામ મોબાઈલ નંબર થી ન મળે તો{" "}
-                    <span className="font-semibold">Non SMK Family Count</span> ની સંખ્યા વધારી બટન દબાવી દેવું
-                  </p>
-                )}
               </section>
             )}
 
-            {/* Case A: Number NOT found in database -> Show Notice */}
+            {/* Case A: Number NOT found in database -> Show Gujarati contact message */}
             {!isLoadingUsers && users.length === 0 && (
-              <div className="w-full bg-white border border-amber-200 rounded-xl p-5 text-center shadow-2xs">
-                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 text-amber-700 mb-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
+              <div className="w-full bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:gap-1.5 text-amber-700 text-xs leading-relaxed">
+                  <span>
+                    <span className="font-semibold">નોંધ :-</span>{" "}
+                    મોબાઈલ નંબર રજિસ્ટર નથી. કૃપા કરીને સંપર્ક કરો
+                  </span>
+                  <span className="text-sm font-semibold text-amber-800 mt-0.5 sm:mt-0">
+                    Pragnesh Patel - 96012 96163
+                  </span>
                 </div>
-                <p className="text-sm font-semibold text-gray-900">
-                  No members found for mobile number <span className="font-mono text-gray-900 font-bold">{selectedMobile}</span>
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  મોબાઈલ નંબર ડેટાબેઝ માં મળ્યો નથી. કૃપા કરીને ઉપર Non SMK Family Count વધારીને સંખ્યા નોંધો.
-                </p>
               </div>
             )}
 
