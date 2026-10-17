@@ -1,4 +1,4 @@
-import { User, UserService } from "@/types/user";
+import { MobileLookup, User, UserService } from "@/types/user";
 import { mockUsers } from "@/mock/users.mock";
 
 export interface AttendanceMember {
@@ -60,7 +60,7 @@ class ApiUserService implements AttendanceService {
     return data.users || [];
   }
 
-  async getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null): Promise<User[]> {
+  async getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null): Promise<MobileLookup> {
     const cleanNumber = mobileNumber.trim();
     let url = "";
 
@@ -69,15 +69,24 @@ class ApiUserService implements AttendanceService {
     } else if (cleanNumber) {
       url = `/api/search?mobile=${encodeURIComponent(cleanNumber)}`;
     } else {
-      return [];
+      return { users: [], linkedUser: null };
     }
 
     const res = await fetch(url);
+    const data = (await res.json().catch(() => ({}))) as {
+      users?: User[];
+      linkedUser?: User | null;
+      error?: string;
+    };
     if (!res.ok) {
-      throw new Error(`Failed to fetch users: ${res.statusText}`);
+      throw new Error(
+        data.error || `Failed to fetch users: ${res.statusText}`
+      );
     }
-    const data = await res.json();
-    return data.users || [];
+    return {
+      users: data.users || [],
+      linkedUser: data.linkedUser ?? null,
+    };
   }
 
   /**
@@ -264,13 +273,13 @@ class MockUserService implements AttendanceService {
       .slice(0, 10);
   }
 
-  async getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null): Promise<User[]> {
+  async getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null): Promise<MobileLookup> {
     await new Promise((resolve) => setTimeout(resolve, 100));
     const cleanNumber = mobileNumber.trim();
 
     if (kutumbId) {
       const family = mockUsers.filter((u) => u.kutumbId === kutumbId);
-      if (family.length > 0) return family;
+      if (family.length > 0) return { users: family, linkedUser: null };
     }
 
     const matched = mockUsers.filter(
@@ -281,10 +290,13 @@ class MockUserService implements AttendanceService {
       (u) => u.kutumbId !== undefined && u.kutumbId !== null
     )?.kutumbId;
     if (targetKutumbId) {
-      return mockUsers.filter((u) => u.kutumbId === targetKutumbId);
+      return {
+        users: mockUsers.filter((u) => u.kutumbId === targetKutumbId),
+        linkedUser: null,
+      };
     }
 
-    return matched;
+    return { users: [], linkedUser: matched[0] ?? null };
   }
 
   async markUsersPresent(
