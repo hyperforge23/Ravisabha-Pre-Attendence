@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDb } from "@/lib/mongodb";
+import RavisabhaDetails from "@/models/RavisabhaDetails";
 import SmkDetail from "@/models/SmkDetail";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,21 @@ interface SmkDoc {
   AddressDescription?: string;
   FamilyLeaderNameEng?: string;
   FamilyLeaderNameGuj?: string;
+}
+
+/** Member lookup is only allowed while a Ravisabha has pre-attendance open. */
+async function hasActiveRavisabha() {
+  const active = await RavisabhaDetails.findOne({ pre_attendance: true })
+    .select("_id")
+    .lean();
+  return Boolean(active);
+}
+
+function noActiveRavisabhaResponse() {
+  return NextResponse.json(
+    { error: "No active Ravisabha" },
+    { status: 404 }
+  );
 }
 
 /** Map a Mongoose document to the frontend User shape */
@@ -78,6 +94,9 @@ export async function GET(request: NextRequest) {
       const kId = Number(kutumbParam.trim());
       if (!isNaN(kId) && kId > 0) {
         await connectDb();
+        if (!(await hasActiveRavisabha())) {
+          return noActiveRavisabhaResponse();
+        }
         const docs = await SmkDetail.find(
           { KutumbId: kId },
           {
@@ -123,6 +142,9 @@ export async function GET(request: NextRequest) {
       }
 
       await connectDb();
+      if (!(await hasActiveRavisabha())) {
+        return noActiveRavisabhaResponse();
+      }
       const projection = {
         FirstName: 1,
         MiddleName: 1,
@@ -155,6 +177,7 @@ export async function GET(request: NextRequest) {
       )?.KutumbId;
 
       let docs: SmkDoc[] = [];
+      let linkedUser: ReturnType<typeof formatUser> | null = null;
       if (targetKutumbId) {
         docs = await SmkDetail.find(
           { KutumbId: targetKutumbId },
@@ -162,11 +185,15 @@ export async function GET(request: NextRequest) {
         )
           .sort({ FirstName: 1 })
           .lean<SmkDoc[]>();
-      } else {
-        docs = matchedByMobile;
+      } else if (matchedByMobile.length > 0) {
+        linkedUser = formatUser(matchedByMobile[0]);
       }
 
-      return NextResponse.json({ users: docs.map(formatUser) });
+      return NextResponse.json({
+        users: docs.map(formatUser),
+        kutumbFound: Boolean(targetKutumbId),
+        linkedUser,
+      });
     }
 
     // ── Mode B: Type-ahead prefix search — used while user is typing ──

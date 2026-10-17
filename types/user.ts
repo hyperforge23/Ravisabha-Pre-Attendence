@@ -22,9 +22,14 @@ export interface User {
   status?: "Present" | "Absent"; // Current attendance status if already marked
 }
 
+export interface MobileLookup {
+  users: User[];
+  linkedUser: User | null;
+}
+
 export interface UserService {
   searchUsers(query: string, signal?: AbortSignal): Promise<User[]>;
-  getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null, signal?: AbortSignal): Promise<User[]>;
+  getUsersByMobileNumber(mobileNumber: string, kutumbId?: number | null, signal?: AbortSignal): Promise<MobileLookup>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   markUsersPresent(userIds: string[], members?: any[]): Promise<{ success: boolean; count: number }>;
 }
