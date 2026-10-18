@@ -109,9 +109,8 @@ export const UserCard: React.FC<UserCardProps> = ({
           return (
             <div
               key={user.id}
-              className={`px-4 sm:px-6 py-4 flex items-center justify-between gap-3 transition ${rowBg} ${
-                isSubmitting ? "pointer-events-none opacity-60" : ""
-              }`}
+              className={`px-4 sm:px-6 py-4 flex items-center justify-between gap-3 transition ${rowBg} ${isSubmitting ? "pointer-events-none opacity-60" : ""
+                }`}
             >
               {/* Text content */}
               <div className="min-w-0 flex-1 space-y-1">
@@ -124,11 +123,10 @@ export const UserCard: React.FC<UserCardProps> = ({
                   )}
                   {currentStatus && (
                     <span
-                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${
-                        currentStatus === "Present"
-                          ? "bg-green-100 text-green-700 border-green-200"
-                          : "bg-red-100 text-red-700 border-red-200"
-                      }`}
+                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${currentStatus === "Present"
+                        ? "bg-green-100 text-green-700 border-green-200"
+                        : "bg-red-100 text-red-700 border-red-200"
+                        }`}
                       aria-label={`Status: ${currentStatus}`}
                     >
                       {currentStatus === "Present" ? (
@@ -156,10 +154,7 @@ export const UserCard: React.FC<UserCardProps> = ({
                     </span>
                   )}
                 </p>
-                <div className="flex items-center gap-2 sm:gap-3 text-xs text-gray-500 font-mono flex-wrap">
-                  {user.smkNo && <span>SMK: {user.smkNo}</span>}
-                  <span>{user.mobileNo || user.mobileNumber}</span>
-                </div>
+
               </div>
 
               {/* Radio buttons — ના (Absent) and હા (Present) */}
@@ -219,11 +214,10 @@ export const UserCard: React.FC<UserCardProps> = ({
                 if (changesCount > 0 && !isSubmitting) onMarkPresent();
               }
             }}
-            className={`w-full sm:w-auto px-8 py-3 sm:py-2.5 rounded-md text-sm font-semibold text-white transition shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-600 ${
-              changesCount === 0 || isSubmitting
-                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                : "bg-[#28a745] hover:bg-[#218838] active:bg-[#1e7e34] cursor-pointer"
-            }`}
+            className={`w-full sm:w-auto px-8 py-3 sm:py-2.5 rounded-md text-sm font-semibold text-white transition shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-600 ${changesCount === 0 || isSubmitting
+              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+              : "bg-[#28a745] hover:bg-[#218838] active:bg-[#1e7e34] cursor-pointer"
+              }`}
           >
             {isSubmitting
               ? "Saving..."
