@@ -14,17 +14,11 @@ export default function AttendancePage() {
   const [mobileInput, setMobileInput] = useState<string>("");
   const [selectedMobile, setSelectedMobile] = useState<string>("");
   const [users, setUsers] = useState<User[]>([]);
-  const [linkedUser, setLinkedUser] = useState<User | null>(null);
   // Track status for each user: undefined = not marked, "Present" or "Absent" = marked
   const [userStatus, setUserStatus] = useState<
     Record<string, "Present" | "Absent" | undefined>
   >({});
-  // Track which users were originally marked (to distinguish new changes from existing records)
-  const [originalStatus, setOriginalStatus] = useState<
-    Record<string, "Present" | "Absent" | undefined>
-  >({});
   const [mehmanCount, setMehmanCount] = useState<number>(0);
-  const [familyCount, setFamilyCount] = useState<number>(0);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{
     type: "success" | "info" | "error";
@@ -49,10 +43,7 @@ export default function AttendancePage() {
     async (mobileNumber: string, kutumbId?: number | null) => {
       if (!mobileNumber && !kutumbId) {
         setUsers([]);
-        setLinkedUser(null);
         setUserStatus({});
-        setOriginalStatus({});
-        setFamilyCount(0);
         setMehmanCount(0);
         return;
       }
@@ -68,7 +59,6 @@ export default function AttendancePage() {
         setSelectedMobile(mobileNumber);
         setCurrentScreen("card");
         setUsers(lookup.users);
-        setLinkedUser(lookup.users.length > 0 ? null : lookup.linkedUser);
 
         // Fetch current attendance status and existing family/mehman counts for these users
         if (lookup.users.length > 0) {
@@ -76,20 +66,9 @@ export default function AttendancePage() {
           const { statusMap, mehmanCount: existingMehman } =
             await userService.getMarkedDetails(ids);
           setUserStatus(statusMap);
-          setOriginalStatus(statusMap);
-          setFamilyCount(0);
-          setMehmanCount(existingMehman);
-        } else if (lookup.linkedUser) {
-          const { familyCount: existingFamily, mehmanCount: existingMehman } =
-            await userService.getMarkedDetails([lookup.linkedUser.id]);
-          setUserStatus({});
-          setOriginalStatus({});
-          setFamilyCount(existingFamily);
           setMehmanCount(existingMehman);
         } else {
           setUserStatus({});
-          setOriginalStatus({});
-          setFamilyCount(0);
           setMehmanCount(0);
         }
       } catch (error) {
@@ -102,10 +81,7 @@ export default function AttendancePage() {
               : "Something went wrong while fetching users. Please try again.",
         });
         setUsers([]);
-        setLinkedUser(null);
         setUserStatus({});
-        setOriginalStatus({});
-        setFamilyCount(0);
         setMehmanCount(0);
       } finally {
         setIsLoadingUsers(false);
@@ -136,13 +112,10 @@ export default function AttendancePage() {
   const handleGoToHome = () => {
     setCurrentScreen("search");
     setUsers([]);
-    setLinkedUser(null);
     setUserStatus({});
-    setOriginalStatus({});
     setSelectedMobile("");
     setMobileInput("");
     setMehmanCount(0);
-    setFamilyCount(0);
     setFeedbackMessage(null);
   };
 
@@ -160,51 +133,6 @@ export default function AttendancePage() {
     },
     [],
   );
-
-  // Counter-only submit — no user searched, just record family/mehman counts
-  const handleCounterOnlySubmit = async () => {
-    if (familyCount === 0 && mehmanCount === 0) return;
-    setIsSubmitting(true);
-    try {
-      const members: AttendanceMember[] = [
-        {
-          ...(linkedUser
-            ? {
-                smkDetailId: linkedUser.id,
-                SmkId: linkedUser.smkNo || undefined,
-              }
-            : {}),
-          familyCount,
-          mehmanCount,
-          status: "Present",
-        },
-      ];
-      const response = await userService.markUsersPresent(
-        linkedUser ? [linkedUser.id] : [],
-        members,
-      );
-      if (response.success) {
-        setUsers([]);
-        setLinkedUser(null);
-        setFamilyCount(0);
-        setMehmanCount(0);
-        setSelectedMobile("");
-        setMobileInput("");
-        setFeedbackMessage(null);
-        setCurrentScreen("thankyou");
-      }
-    } catch (error) {
-      setFeedbackMessage({
-        type: "error",
-        text:
-          error instanceof Error
-            ? error.message
-            : "Failed to record count. Please try again.",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   // Handle Submit Button Click — submits all users with status (Present or Absent)
   const handleMarkPresent = async () => {
@@ -245,13 +173,10 @@ export default function AttendancePage() {
       if (response.success) {
         // Reset and navigate to Thank You screen
         setUsers([]);
-        setLinkedUser(null);
         setUserStatus({});
-        setOriginalStatus({});
         setSelectedMobile("");
         setMobileInput("");
         setMehmanCount(0);
-        setFamilyCount(0);
         setFeedbackMessage(null);
         setCurrentScreen("thankyou");
       }
@@ -519,53 +444,14 @@ export default function AttendancePage() {
               </div>
             )}
 
-            {/* Kutumb match: Mehman Count only. No Kutumb: both counters, no member list. */}
-            {!isLoadingUsers && (
+            {/* Counters Section: only show when members ARE found */}
+            {!isLoadingUsers && users.length > 0 && (
               <section
                 aria-label="Family and Mehman Counters"
                 className="w-full bg-white border border-gray-200 rounded-xl p-3.5 sm:p-4 shadow-2xs space-y-3"
               >
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-4 w-full min-w-0">
-                    {users.length === 0 && (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                        <span className="text-sm font-medium text-gray-700 leading-snug">
-                          આ રવિસભામાં આવનારા તમારા ફેમિલી ની સંખ્યા
-                        </span>
-                        <div className="flex items-center justify-between h-9 px-2 bg-gray-50 border border-gray-200 rounded-lg shrink-0 self-start sm:self-center">
-                          <button
-                            type="button"
-                            disabled={familyCount <= 0}
-                            onClick={() =>
-                              setFamilyCount((prev) => Math.max(0, prev - 1))
-                            }
-                            className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${familyCount <= 0
-                              ? "text-gray-300 cursor-not-allowed"
-                              : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                              }`}
-                          >
-                            −
-                          </button>
-                          <span className="w-8 text-center text-sm font-semibold font-mono text-gray-800">
-                            {familyCount}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={familyCount >= 10}
-                            onClick={() =>
-                              setFamilyCount((prev) => Math.min(10, prev + 1))
-                            }
-                            className={`w-7 h-7 flex items-center justify-center text-lg font-bold rounded ${familyCount >= 10
-                              ? "text-gray-300 cursor-not-allowed"
-                              : "text-blue-600 hover:bg-blue-50 cursor-pointer"
-                              }`}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                       <span className="text-sm font-medium text-gray-700 leading-snug">
                         આ રવિસભામાં તમારી સાથે કોઈ મહેમાન આવાના હોય તેની સંખ્યા
@@ -603,25 +489,21 @@ export default function AttendancePage() {
                       </div>
                     </div>
                   </div>
-
-                  {users.length === 0 && (
-                    <button
-                      type="button"
-                      disabled={
-                        isSubmitting || (familyCount === 0 && mehmanCount === 0)
-                      }
-                      onClick={handleCounterOnlySubmit}
-                      className={`w-full sm:w-auto px-8 py-2.5 rounded-md text-sm font-semibold text-white transition shadow-xs ${
-                        isSubmitting || (familyCount === 0 && mehmanCount === 0)
-                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                          : "bg-[#28a745] hover:bg-[#218838] cursor-pointer"
-                      }`}
-                    >
-                      {isSubmitting ? "Saving..." : "Submit"}
-                    </button>
-                  )}
                 </div>
               </section>
+            )}
+
+            {/* Case A: Number NOT found or NOT linked to any Kutumb -> Show Gujarati contact note */}
+            {!isLoadingUsers && users.length === 0 && (
+              <div className="w-full bg-amber-50 border border-amber-200 rounded-xl px-4 py-3.5 shadow-2xs">
+                <div className="text-amber-800 text-xs sm:text-sm leading-relaxed">
+                  <span className="font-semibold text-amber-900">નોંધ :-</span>{" "}
+                  મોબાઈલ નંબર રજિસ્ટર નથી, તમે WhatsApp ગ્રુપમાં તમારી સંખ્યા નોંધાવી શકો છો. મોબાઈલ નંબર રજિસ્ટર કરવા માટે કૃપા કરીને સંપર્ક કરો{" "}
+                  <span className="font-semibold text-amber-950 whitespace-nowrap">
+                    Pragnesh Patel - 96012 96163
+                  </span>
+                </div>
+              </div>
             )}
 
             {/* Case B: User(s) FOUND in database -> Show UserCard */}
